@@ -1,7 +1,7 @@
 # Llama-Fast 
 
 A **llama.cpp** engine integrating the following optimizations:
-1. **PrismML Weight Kernels (`PQ2_0`, `PTQ1_0`)** — CUDA kernels for ternary and 2-bit weights.
+1. **PrismML Weight Kernels (`PQ2_0`, `PTQ1_0`)** — CUDA kernels for ternary weights.
 2. **TurboQuant KV Cache (`turbo3_0`, `turbo4_0`, `turbo2_0`)** — low-bit vector quantization with Polar Walsh-Hadamard Transform (WHT) query/value rotation.
 3. **TriAttention KV Cache Pruning** — trigonometric series scoring and norm-based key eviction for bounded KV cache memory.
 4. **CUDA Concurrency & Graph Reuse (`GGML_CUDA_GRAPH_OPT=1`)** — concurrent stream execution for attention projections and CUDA graph reuse.
