@@ -65,4 +65,4 @@ Findings that surfaced while filing the sources and are not among the six items 
 
 ## See also
 
-[[overview]] · [[performance-profile]] · [[codebase-map]] · [[source-state-md]] · [[source-agents-md]]
+[[overview]] · [[performance-profile]] · [[codebase-map]] · [[source-state-md]] · [[source-agents-md]] · [[open-questions]] · [[ta-8-offset-max-zero-nan]] · [[ta-9-rope-scope-mismatch]]
