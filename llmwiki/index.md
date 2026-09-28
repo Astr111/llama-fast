@@ -1,0 +1,107 @@
+# llmwiki — index
+
+Catalog of the vault. Read this first, then drill into pages. Conventions and procedures: `SCHEMA.md`.
+Status: `current` unless the page says otherwise. Every page cites its sources; `verified:` in the frontmatter lists the paths whose claims were checked against the code.
+
+Maintained by the LLM. Last full pass: 2026-09-28.
+
+---
+
+## Start here
+
+| Page | What it answers |
+| :--- | :--- |
+| [[overview]] | What this project is, where it is stuck, and what the evidence actually supports |
+| [[roadmap]] | What is planned, what is unplanned but visible, and the sequencing conflicts |
+| [[codebase-map]] | Where anything lives in the tree, and whether it builds |
+| [[performance-profile]] | Where the GPU time goes, and which attributions survive contact with the code |
+
+## Sources (`raw/` snapshots)
+
+| Page | Summary | Raw |
+| :--- | :--- | :--- |
+| [[source-readme]] | The release README: four optimizations, upstream lineage, GPU matrix, CLI surface, RTX 3090 measurements | `raw/README.md` |
+| [[source-state-md]] | The user's working document: profiling conclusions, four checkouts, and the TA/TQ defect inventories | `raw/state.md` |
+| [[source-triattention]] | The project's own TriAttention design doc: calibration, trigonometric scoring, eviction | `raw/TRIATTENTION.md` |
+| [[source-triattention-api]] | The three-layer TriAttention API contract as documented | `raw/TRIATTENTION-API.md` |
+| [[source-agents-md]] | The repository constitution: edit boundaries, pipeline, wiki schema | `raw/AGENTS.md` |
+| [[source-llmwiki]] | The pattern this vault implements | `raw/llmwiki.txt` |
+
+## Entities (things)
+
+| Page | Summary |
+| :--- | :--- |
+| [[ternary-bonsai-2-27b]] | The target model, read from its GGUF header: `PQ2_0`, `head_dim=256`, hybrid attention/SSM |
+| [[qwen35-architecture]] | The architecture the sources never name: 64 blocks, only 16 with a KV cache |
+| [[v100-sxm2]] | The deployment target and the capability gates that shape every design decision |
+| [[triattention]] | Calibration-guided KV eviction: the mechanism and where it runs |
+| [[turboquant]] | The KV-cache vector quantization scheme: types, geometry, rotation, fused dots |
+| [[innerq]] | InnerQ equalization — and the two competing state homes it lives in |
+| [[walsh-hadamard-transform]] | The rotation before quantization, and the three implementations of it |
+| [[prism-hadamard-weight-fold]] | The *model-side* Hadamard fold baked into the checkpoint — not the KV rotation |
+| [[prismml-weight-kernels]] | `PQ2_0`/`PTQ1_0` weight kernels and their arch reach (out of scope for edits) |
+| [[cuda-graphs]] | `GGML_CUDA_GRAPH_OPT=1`: what graph reuse and concurrent streams actually buy |
+| [[speculative-decoding]] | The `draft-dflash` block-proposal path |
+| [[qwen3-dflash-draft]] | The draft model itself |
+
+## Concepts (ideas)
+
+| Page | Summary |
+| :--- | :--- |
+| [[kv-cache]] | Why its cost grows with context, and the three things this project does about it |
+| [[kv-eviction]] | Bounding KV by a fixed cell count, and the failure mode of a fixed budget |
+| [[quantization]] | Low-bit KV representation, block scales, and why a missing dot kernel is expensive here |
+| [[gemm-dispatch]] | How ggml picks a matmul kernel, and what happens to a type nobody listed |
+
+## Issues
+
+TriAttention's inventory, from [[source-state-md]] §3 — verified against the code:
+
+| Page | Severity | One line |
+| :--- | :--- | :--- |
+| [[ta-1-wht-inversion-256]] | CRITICAL | The scoring kernel skips WHT inversion at `head_dim=256`; triggered by the target model |
+| [[ta-2-budget-starvation]] | HIGH | Long prefixes starve the budget to zero and eviction collapses to a sliding window |
+| [[ta-3-cpu-fallback-transfers]] | HIGH | Per-cell synchronous D2H copies stall the CPU path for 15–30 s |
+| [[ta-4-cooperative-fwht-race]] | MEDIUM | Shared-memory WHT assumes 64 active threads; UB on Volta |
+| [[ta-5-freq-scale-dead-code]] | MEDIUM | `freq_scale_sq` computes to 1.0 always; the scaling is disabled |
+| [[ta-6-overlap-double-counting]] | LOW | Latent risk for future patches, not a live defect |
+| [[ta-7-config-validation]] | LOW | No guard rails on incompatible `budget`/prefix/window combinations |
+
+TurboQuant's inventory, from [[source-state-md]] §4 — several premises corrected against the code:
+
+| Page | Severity | One line |
+| :--- | :--- | :--- |
+| [[tq-1-missing-gemm-kernels]] | CRITICAL | Turbo KV types are absent from the dispatch allow-lists; the recorded `magma` symbol does not exist in the tree |
+| [[tq-2-innerq-host-state]] | HIGH | Host state is file-scope `static` in a header — still present, and now duplicated by a newer module |
+| [[tq-3-innerq-multigpu]] | HIGH | `static __device__` state receives `cudaMemcpyToSymbol` on one device only |
+| [[tq-4-wht-numerical-mismatch]] | HIGH | Three WHT copies; the mismatch is a latent hazard, not a demonstrated defect |
+| [[tq-5-tail-elements]] | MEDIUM | Tail path unreachable in this checkout |
+| [[tq-6-innerq-race]] | MEDIUM | Calibration counter keyed on thread mapping |
+| [[tq-7-innerq-max-channels]] | MEDIUM | `INNERQ_MAX_CHANNELS = 128` against a 256-channel head |
+
+## Topics (synthesis)
+
+| Page | Summary |
+| :--- | :--- |
+| [[overview]] | The project's situation in one screen |
+| [[performance-profile]] | The recorded profiling conclusions and their confounds |
+| [[benchmarks]] | The two measurement suites, neither run on the deployment hardware |
+| [[codebase-map]] | Tree layout, custom-code locations, build system, and the missing template instances |
+| [[triattention-calibrate]] | The offline calibration tool, its profile format, and where doc and code diverge |
+| [[upstream-lineage]] | Three upstreams plus a paper, and what that implies for maintenance |
+| [[roadmap]] | The six recorded action items, plus findings the inventory never listed |
+
+## Open contradictions (unresolved, deliberately)
+
+Recorded on the relevant pages and in `log.md`, never silently reconciled:
+
+1. **Benchmarks are Ampere, the target is Volta** — the 1.39× and tok/GB figures describe an RTX 3090. See [[benchmarks]].
+2. **The recorded `magma_sgemmEx_kernel` cost cannot be grounded** — no MAGMA path exists in `src/`. See [[gemm-dispatch]], [[tq-1-missing-gemm-kernels]].
+3. **Turbo KV types are missing from `supports_op`** as well as from the kernel dispatch, so the causal story behind the 38.8 % is weaker than recorded. See [[gemm-dispatch]].
+4. **The published CUDA 12.4 bundle carries only `sm_86`** while its own README claims Volta support. See [[v100-sxm2]], [[codebase-map]].
+5. **`src/ggml/src/ggml-cuda/template-instances/` is empty** while CMake globs it — 138 files exist only in the archive. See [[codebase-map]].
+6. **The TriAttention design doc dates its own paper to 2025 with different authors**, while the README cites the same arXiv id as April 2026. See [[source-triattention]].
+7. **The design doc's CLI defaults disagree with the code and the README**, which agree with each other. See [[triattention-calibrate]].
+8. **`--triattention-calibrate*` may be inert** and `offset_max=0` may yield NaN scores — `[INFERENCE]` from code, not executed. See [[triattention-calibrate]].
+9. **"max 5 draft tokens" exists nowhere in the tree** — the code default is 3 and the flag was removed. See [[speculative-decoding]].
+10. **`block_size=32` in the sources contradicts `QK_TURBO3 = 128` in the code.** See [[turboquant]].
