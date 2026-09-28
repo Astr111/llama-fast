@@ -90,4 +90,4 @@ There is also a **sixth, non-butterfly** form: the precomputed 128×128 rotation
 
 ## See also
 
-[[turboquant]] · [[triattention]] · [[innerq]] · [[quantization]] · [[kv-cache]] · [[ta-1-wht-inversion-256]] · [[ta-4-cooperative-fwht-race]] · [[tq-4-wht-numerical-mismatch]] · [[tq-5-tail-elements]] · [[v100-sxm2]] · [[source-state-md]]
+[[turboquant]] · [[triattention]] · [[innerq]] · [[quantization]] · [[kv-cache]] · [[ta-1-wht-inversion-256]] · [[ta-4-cooperative-fwht-race]] · [[tq-4-wht-numerical-mismatch]] · [[tq-5-tail-elements]] · [[turbo-wht]] · [[v100-sxm2]] · [[source-state-md]]
