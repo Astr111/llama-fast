@@ -94,4 +94,4 @@ The acceptance statistics that make the recorded throughput curve legible are co
 
 ## See also
 
-[[speculative-decoding]] · [[request-lifecycle]] · [[overview]] · [[kv-cache]] · [[performance-profile]] · [[benchmarks]] · [[qwen35-architecture]]
+[[speculative-decoding]] · [[request-lifecycle]] · [[overview]] · [[kv-cache]] · [[performance-profile]] · [[benchmarks]] · [[qwen35-architecture]] · [[server-layer]]
