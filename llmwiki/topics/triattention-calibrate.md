@@ -125,6 +125,32 @@ The calibration tool's product is one factor in the document's headline "**~40×
 - **Are the dead `--triattention-calibrate*` flags the intended interface?** If the intent was for the calibrate tool to be driven by them, then `README.md` is right and the tool needs to read `common_params`; if the tool is right, they should be deleted. Either way `r_f` is written, documented as validation, and never validated.
 - **Is the CLI default `offset_max = 0` reachable and harmful?** The design document lists 65536; `src/common/common.h:755` has `0`, and `scripts/start_server_turbo.sh:35` never passes it. `triattention_build_offsets` returns zero offsets for 0, which makes the mean-aggregated score `0 × (1/0)`. `[INFERENCE]`, untested; belongs with [[ta-7-config-validation]].
 
+## Verdict: which basis does the calibration capture?
+
+**Post-RoPE — confirmed, not refuted.** The `Qcur` name is *not* re-used for a pre-RoPE view anywhere in the qwen35 graph; the only tensor whose name the collector matches is the output of `ggml_rope_multi` itself, and the scorer combines it with un-rotated keys. The calibration basis is therefore inconsistent with the scoring basis, and the "pre-RoPE" label the tool prints is wrong for the architecture it shipped with.
+
+### The recorded tensor is the rope output
+
+- The collector matches the exact substring `"Qcur-"` plus a layer index (`parse_qcur_layer`, `src/tools/triattention-calibrate/triattention-calibrate.cpp:42-52`); the graph callback formats per-layer names as `"%s-%d"` (`src/src/llama-context.cpp:2795`). Only a `cb(..., "Qcur", il)` call can produce a matching name.
+- The qwen35 attention builder makes exactly **one** such call: `cb(Qcur, "Qcur", il)` at `src/src/models/qwen35.cpp:379`, naming the return value of `ggml_rope_multi` (`:367-371`). The pre-RoPE tensors are named `Qcur_full` (`:335`), `Qcur_reshaped` (`:340`) and `Qcur_normed` (`:344`) — none contains the `"Qcur-"` substring, so all three are invisible to the collector regardless of shape. The MTP builder renames everything (`mtp_Qcur_full` `:687`, `mtp_Qcur_normed` `:695`) and never emits a bare `Qcur`, so the second-pass graph cannot contaminate the capture either.
+- The post-RoPE tensor passes the collector's gates — 3D, `ne[1] == n_head`, even `ne[0]` (`triattention-calibrate.cpp:61-66`) — and the shipped profile's 384 entries (16 layers × 24 heads, byte-verified above) are exactly what a successful capture on that tensor produces.
+- The generic builder *does* name a pre-RoPE `Qcur` (`llm_graph_context::build_qkv`, `src/src/llama-graph.cpp:1776`, plus the 2D `:1742`/`:1745` variants the `ne[1]` gate skips) — which is why the collector's "before RoPE" comment (`triattention-calibrate.cpp:60`) is true for generic architectures but false for the one that produced `calibration/bonsai-27b.triattention`.
+
+### The scorer's basis is the opposite one
+
+`triattention_score_keys` reads keys from `pre_rope_k` — the output of `triattention_invert_rope` (`src/src/llama-triattention.cpp:382`), i.e. deliberately **un-rotated** keys (`:444-445`) — and combines them with the calibration stats in two rotation-sensitive ways:
+
+- **Phase (Eq. 6):** `phi = atan2(conj_im, conj_re)` on the complex product `E[q_f] · conj(k_f)` (`:480-482`) feeds `cos(ω_f·Δ + phi)` (`:484-490`). RoPE rotates each query instance by its own position, `e^{i·m·θ_f}`, so the corpus-mean `E[q_f]` carries a position-weighted phase that pre-RoPE keys do not have. The angle the score measures is wrong.
+- **Norms (Eqs. 7-8):** `‖E[q_f]‖` (`:352`) and `extra_weight = E[‖q_f‖] − ‖E[q_f]‖` (`:360`) are corrupted too: a phase-scattered mean has a *smaller* magnitude than its un-rotated value, so `‖E[q_f]‖` is understated and the norm-excess term inflated. Only `E[‖q_f‖]` (`q_abs_mean`) is basis-invariant.
+
+**Consequence, plainly: every Eq. 6-8 score computed from this profile is wrong in a position-dependent way — eviction ranks keys by a statistic that mixes post-RoPE query phase with pre-RoPE key phase.** This is a **third defect**, not [[ta-9-rope-scope-mismatch]] from another side: ta-9 is about the *inverse map's geometry* (all 256 dims, exponent θ^(−2f/256) vs the model's 64 rotating dims); this is about the *captured operand's basis*. They are independent — correcting the inverse map leaves the post-RoPE phase wrong, and re-capturing pre-RoPE leaves the inverse geometry wrong. Both are masked in the shipped scripts by [[ta-8-offset-max-zero-nan]]'s all-NaN scores, which must be fixed before either can even be observed; ta-9's impact paragraph already bumps into the capture ("the captured `q` statistic is post-RoPE and left untouched") without making it its own defect. See [[scoring-correctness]] for the family.
+
+### Confidence
+
+**[VERIFIED]** by reading: the name plumbing (`llama-context.cpp:2795` → collector `strstr "Qcur-"`), the qwen35 graph ordering (rope at `qwen35.cpp:367`, name at `:379`, no other `Qcur`), and the scorer's key basis (`llama-triattention.cpp:444-445`, `:480-490`).
+
+**[UNVERIFIED]** — the *magnitude* of the damage: no run exists (this machine has no CUDA toolkit and cannot build — [[build-and-verify]]), so how much the corrupted phase/norm terms change the kept-token set is unmeasured. The run that would settle the basis question outright: one calibration pass with a print of the captured tensor's producer at the callback (expect `GGML_OP_ROPE`); for the impact, regenerate the profile with a pre-RoPE capture hook and diff scores/kept sets on the V100. Also `[UNVERIFIED]` that the generic-builder capture (`llama-graph.cpp:1776`) matches the paper's intended statistic for other architectures — irrelevant to the shipped profile, relevant to any future one.
+
 ## See also
 
 [[source-triattention]] · [[source-triattention-api]] · [[triattention]] · [[kv-eviction]] · [[kv-cache]] · [[ternary-bonsai-2-27b]] · [[walsh-hadamard-transform]]
