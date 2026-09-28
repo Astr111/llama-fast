@@ -143,6 +143,67 @@ What the server does at startup (`server.cpp:334`, `server_mcp::start` `server-m
 
 [INFERENCE] `--fit` is **on by default** (`bool fit_params = true`, `src/common/common.h:469`) and the fit search measures once per candidate layer split / context size, so the 13 slow calls are startup fitting plus the breakdown print — made slow (~8.9 ms each) because the query runs right after a CUDA model/context was built or torn down and the device still has work outstanding. The two reads that force this: `src/common/common.cpp:1295-1325` (fit runs whenever `params.fit_params`) and `fit.cpp:587-595` (one measurement per candidate). It is not a per-request probe — no request-path call site exists — but splitting 116 ms into fit vs. breakdown vs. CUDA-context churn needs a `--fit off` timeline, which is a measurement, not a reading. That converts the open question in [[first-live-measurements]] from "per-request probe or startup-only?" to "how much of the 116 ms does `-fit off` remove?".
 
+## The schema and chat layers
+
+The first pass read the slot loop and grepped everything else. Two of those greps are the parts that turn a client payload into `task_params` and a raw generation back into a typed response: `src/tools/server/server-schema.cpp` (658 lines, + `server-schema.h`) and `src/tools/server/server-chat.cpp` (692 lines, + `server-chat.h`). Both are read here; the loop they feed is above.
+
+### The request contract — a default-merging walker, not a validator
+
+`server-schema.cpp` owns exactly one thing: **the description of the completions request body, as data** (`make_llama_cmpl_schema`, `server-schema.cpp:11`, **74 `add((new field_…))` calls**). Five field types (`server-schema.h:27-96`): `field` (base: an ordered `name` list — aliases live here — a human `desc`, an optional `custom_handler`, `server-schema.h:27-45`), `field_num<T>` (`:47`), `field_str` (`:68`), `field_bool` (`:73`), `field_json` (`:79`), and `field_nested` (`:84`, recursive subfields — used for `stream_options.include_usage`).
+
+`eval_llama_cmpl_schema(vocab, params_base, logit_bias_eog, data)` (`server-schema.cpp:515`) is the single entry point, called once per prompt from `handle_completions_impl` (`server-context.cpp:4217-4221`). It first **seeds `task_params` from the launch-time `common_params`** — `params.sampling = params_base.sampling`, `n_predict`, `n_keep`, `n_cache_reuse`, `cache_prompt`, `antiprompt`, `sse_ping_interval`, `verbose = verbosity > 9` (`server-schema.cpp:517-540`), then builds the schema (`:542`) and runs `eval` over it (`:545`), then a `// post-processing` block immediately before the `// eval() implementations` banner (`:551-568`, `:569`).
+
+Three facts define the contract:
+
+1. **No field is required.** Every `eval` is gated on `has_value(data, n)` — *present and not `null`* (`server-schema.cpp:581-584`), explicitly so that "clients can send null to request the server default". An absent field leaves the launch-time default. The request bodies are therefore not validated against a required-key set at all; the only hard key dependency is `data.at("prompt")` in `handle_completions_impl` (`server-context.cpp:4180`).
+2. **Aliases are fallbacks in insertion order**, resolved before absence is decided: `n_predict` also answers to `max_completion_tokens` and `max_tokens`; `n_cmpl` to `n`; `json_schema` to `grammar` (`server-schema.cpp:36-40`, `:48-51`, `:252-254`; `add_alias` occurs 6 times in the file, these four were read).
+3. **Two limit classes, and they fail differently.** `set_limits` is *soft* — out-of-range values are silently clamped (`val = std::max(min, std::min(max, …))`, `field_num<T>::eval`, `server-schema.cpp:587`; `server-schema.h:55-59`). `set_hard_limits` is *hard* — it throws `invalid_argument("Value must be between …")` (`server-schema.h:60-64`). The file has **17 hard and 9 soft** limit declarations: `n_predict`, `n_indent`, `n_keep`, `n_discard`, `n_cmpl` (bounded by `params_base.n_parallel`), `n_cache_reuse`, `t_max_predict_ms`, `sse_ping_interval` and others are hard; the *sampling* fields — `top_k`, `top_p`, `min_p`, `xtc_*`, `temperature` — are soft. **A bad `n_cmpl` is a 400; a bad `temperature` is silently rewritten.**
+
+Rejection path, and the exception it proves:
+
+| Channel | What throws | Result |
+| :--- | :--- | :--- |
+| Hard-limit violation, malformed alias value | `invalid_argument`, wrapped as `Field '<name>': <msg>` by `handle_with_catch` (`server-schema.cpp:573-579`) | escapes `handle_completions_impl`'s `try` → `format_error_response(e.what(), ERROR_TYPE_INVALID_REQUEST)` (`server-context.cpp:4243-4248`) → `invalid_request_error`, HTTP 400 (`server-common.cpp:22-26`) |
+| No `prompt`, unknown converter input | `json::out_of_range` / `invalid_argument` | 400 if `invalid_argument`, else 500 — the backstop `ex_wrapper` maps **only** `std::invalid_argument` to 400 and everything else to `server_error`/500 (`server.cpp:53-83`) |
+| Missing `messages` on `/v1/messages` | `std::runtime_error("'messages' is required")` (`server-chat.cpp:363-365`) | **500, not 400** — the conversion runs in the route lambda (`server-context.cpp:4942`) *before* `handle_completions_impl` is entered, so its own catch never sees it; the displayed lambda body (`:4941-4952`) has no local `try` |
+
+That last row is the reason this section exists: the vault's implicit assumption that a malformed request is a 400 is **false for two of the three API surfaces**. `[UNVERIFIED]` for the exact nlohmann type thrown by `data.at("prompt")` (out_of_range derives from `std::exception`, not `invalid_argument` — `[INFERENCE]` from the standard library, not read here); `[UNVERIFIED]` whether an enclosing `try` exists in the Anthropic lambda outside the ten lines displayed.
+
+The schema's `desc` strings are prose for humans; no endpoint read here serializes them (`/props` was not re-read for that). `[UNVERIFIED]`
+
+### The chat layer — one converter in, one serializer out
+
+Every chat-family route is a **three-line converter onto the completions body**, then the same `handle_completions_impl` as `/completions`:
+
+| Route | Converter | Call site |
+| :--- | :--- | :--- |
+| `/chat/completions`, `/v1/chat/completions` | `oaicompat_chat_params_parse(body, meta->chat_params, files)` | `server-context.cpp:4835-4846` |
+| `/v1/responses` | `server_chat_convert_responses_to_chatcmpl` → `oaicompat_chat_params_parse` | `:4892-4900` |
+| `/v1/messages` (Anthropic) | `server_chat_convert_anthropic_to_oai` → `oaicompat_chat_params_parse` | `:4942-4950` |
+| transcriptions | `convert_transcriptions_to_chatcmpl` → `oaicompat_chat_params_parse` | `:4920-4930` |
+| `/apply-template` | `oaicompat_chat_params_parse`, **no inference** | `:4962-4972` |
+
+**The message list becomes a prompt inside `oaicompat_chat_params_parse`** (`src/tools/server/server-common.cpp:1129`, declared `server-common.h:319`) — a `json&` OpenAI body in, a body carrying a ready `prompt` string out (it mutates `body` in place, hence the non-const reference). The proof is `/apply-template`: it calls the same function and returns `{"prompt": data.at("prompt")}` verbatim (`server-context.cpp:4966-4971`), the identical key `handle_completions_impl` then feeds to `tokenize_input_prompts` (`:4181-4190`). The template mechanics are [[chat-templates]] and the engine [[jinja-engine]]; they are not re-described here. `[UNVERIFIED]`: that `common_chat_templates_apply` is called from inside `oaicompat_chat_params_parse` — that body was not read; what is verified is the shape of its input and output.
+
+`server-chat.cpp` is the per-API adapter, three converters and one serializer:
+
+- **Responses → Chat Completions** (`server_chat_convert_responses_to_chatcmpl`, `server-chat.cpp:6-296`): `input` required (`:7-9`); `previous_response_id` **explicitly unsupported** (`:10-12`); content parts typed and individually rejected (`input_text`/`input_image`/`input_file`, `:71-96`) with `input_file` refused outright (`:92-93`, "not supported by llamacpp at this moment"); `tools` must be an array and each tool is given `strict: true` if absent (`:252-271`); `max_output_tokens → max_tokens` (`:281-284`); `reasoning.effort → reasoning_effort` (`:286-292`).
+- **Anthropic → OpenAI** (`server_chat_convert_anthropic_to_oai`, `:334-605`): `messages` required (`:363-365`), `system` mapped to a system message, tool `input_schema → parameters` (`:544-546`), `stop_sequences → stop` (`:566-569`), a missing `max_tokens` **defaulted to 4096** even though Anthropic requires it (`:571-577`), `thinking.type == "enabled"` translated (`:586-593`). Plus `normalize_anthropic_billing_header` (`:312-332`), which rewrites the per-request `cch=…` token inside an `x-anthropic-billing-header:` system prompt — because it changes on every request and would defeat prefix caching (`:298-311`, upstream PR 21793). This is the server-side explanation for a prefix-cache miss a Claude Code client would otherwise report at this layer.
+- **Transcriptions** (`convert_transcriptions_to_chatcmpl`, `:637-692`): audio → chat body; only `response_format: "json"` is supported (`:656-658`) and the ASR prompt comes from the template set (`:659`).
+- **Out**: `server_chat_msg_diff_to_json_oaicompat(diff)` (`:607-635`) is the single function that turns a parser-produced `common_chat_msg_diff` into the OpenAI wire delta (`reasoning_content`, `content`, …). It is called from `task_result_state`'s serializers — streaming at `server-task.cpp:475-477`, non-stream at `:1141-1143` — which is where the "generated text → typed response" joint actually is: the chat parser produces diffs ([[chat-templates]]), and this function is their OpenAI rendering.
+
+### Grammar and JSON schema on the wire
+
+`server-schema.cpp` **does** carry the structured-output plumbing, but only the conversion half. It includes `json-schema-to-grammar.h` (`server-schema.cpp:3`), and the `json_schema` field (`:252-266`) — alias `grammar` (`:253`), documented as "json_schema takes precedence if both are provided" (`:254`) — calls `json_schema_to_grammar(schema)` and stores the result as `params.sampling.grammar = {COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, …}` (`:261-263`), re-throwing conversion failures as `"json_schema": <msg>` (`:264-266`).
+
+A raw `grammar` string takes the other branch and is typed **by a key the client is not supposed to set**: `grammar_type: "tool_calls"` (set by the server when it converts a chat template's grammar) yields `COMMON_GRAMMAR_TYPE_TOOL_CALLS`, anything else `COMMON_GRAMMAR_TYPE_USER` (`:267-277`). Companion fields: `grammar_lazy` (`:283`), and `grammar_triggers` (`:349-356`), where word triggers are matched against the vocabulary and the EOG logit bias — the reason `field_eval_context` carries both the `vocab` and `logit_bias_eog` pointers (`server-schema.h:18-21`, filled at `server-context.cpp:4217-4220`).
+
+This is only the transport of a GBNF string into `params.sampling.grammar`; decoding under the constraint is [[grammar-constraints]], and how `params.sampling` becomes a sampler chain is [[sampling]].
+
+### What a client author needs that no other page gives
+
+That the request body is a **partially-typed override of the server's launch configuration, with per-field failure semantics that differ field by field**. Every default a client sees comes from the command line ([[runtime-switches]]): `params_base` is the server's `common_params`, copied field-group by field-group at `server-schema.cpp:517-540`, so `--n-predict`, `-c`, `--reasoning-budget` and the sampler defaults are per-request defaults, not constants. A client can therefore omit almost everything; what it cannot do is *know which of its own values will be honoured*. Numeric caps on generation and cache behaviour (`n_predict`, `n_keep`, `n_cmpl`, `n_cache_reuse`, `t_max_predict_ms`, `sse_ping_interval`) are hard: an out-of-range request is refused with `Field 'n_cmpl': Value must be between …` and 400. The sampling parameters are soft: an out-of-range `temperature` or `top_p` is clamped without a word, so a client that sends `temperature: 5` and one that sends `temperature: 1` get the same distribution and no diagnostic. Explicit `null` means "use the server default", not "unset to zero" (`server-schema.cpp:581-584`). Finally, the three chat surfaces do not share one failure mode: Responses and transcriptions reject with 400, Anthropic's missing-`messages` path surfaces as a 500 `server_error` — a client retrying on 5xx will retry forever on a request that can never succeed. The end-to-end order of these steps, from HTTP body to the first decoded token, is [[request-lifecycle]].
+
 ## See also
 
 [[request-lifecycle]] · [[sampling]] · [[speculative-decoding]] · [[performance-profile]] · [[benchmarks]] · [[v100-sxm2]] · [[cuda-graphs]] · [[overview]]
