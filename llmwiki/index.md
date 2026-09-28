@@ -61,6 +61,8 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[runtime-switches]] | Every env var and flag the binaries actually read, and the one that does not exist |
 | [[chat-templates]] | Messages → prompt → tool calls: the layer between the tokenizer and the model |
 | [[kv-cache-dsv4]] | The second KV-cache engine in this tree — reachable, and without TriAttention |
+| [[auto-fit]] | The `--fit` placement search, and why it does not explain the measured VRAM probing |
+| [[llama-bench]] | The in-tree benchmark harness: present in the sources, absent from the shipped bundles |
 | [[qwen3-dflash-draft]] | The draft model itself |
 
 ## Concepts (ideas)
@@ -119,6 +121,7 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[server-layer]] | What `llama-server` adds: slots, endpoints, and the statistics behind the numbers |
 | [[open-questions]] | The whole unresolved backlog, classified by what it would take to close |
 | [[documentation-coverage]] | What the vault covers, what it does not, and the ranked gaps that matter |
+| [[loading-and-batching]] | How the model reaches memory and how work is grouped before the graph |
 | [[device-placement]] | Whether a TurboQuant node ever runs on the GPU — and the answer refutes TQ-1's premise |
 | [[decisions-pending]] | The choices the project owes, with each option's cost and a recommendation |
 | [[forward-pass]] | The data flow of one token through the engine, with shapes and the custom stacks placed in it |

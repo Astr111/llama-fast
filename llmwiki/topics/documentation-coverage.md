@@ -78,7 +78,25 @@ Naming these prevents them from being re-discovered as "gaps" by the next pass. 
 - **Tests as a body of source**: 74 files in `src/tests`; [[build-and-verify]] covers what they do and do not assert, which is the part that matters.
 - **Alternative architectures**: 146 unread files under `src/src/models`. [[qwen35-variants]] classifies the ones in the target's family; the rest are upstream.
 
-## How to close the top of the list
+## Resolution status (2026-09-29)
+
+All twelve ranked entries have now been worked. Nine produced their page; three were **refuted by the slice that was sent to close them**, which is recorded rather than quietly dropped:
+
+| Entry | Outcome |
+| :--- | :--- |
+| #1 sampler, #7 grammar | closed → [[sampling]] at implementation depth |
+| #2 RoPE, #4 norm kernels | closed → [[forward-pass]]; also **corrected the vault's own reading** of the 108→216 instance count (two rows merging, not doubled work) |
+| #3 `ssm-scan.cu` | **REFUTED** — it is another architecture's scan |
+| #5 KV cache DSV4 | closed → [[kv-cache-dsv4]], and its verdict **narrowed every eviction claim** in the vault to the hybrid path |
+| #6 prompt assembly | closed → [[chat-templates]] |
+| #8 server internals | closed → [[server-layer]]; its `--fit` attribution for the 116 ms was later **withdrawn** |
+| #9 `fit.cpp` | closed → [[auto-fit]]; refuted the 13-probe count |
+| #10 unicode layer | closed → [[tokenizer]]; the flagged defect is **real but unreachable for the target model** |
+| #11 `llama-bench` | closed → [[llama-bench]]; corrected "tooling present" to **source present, binary absent** |
+| #12 batch/mmap/saver/adapter | closed → [[loading-and-batching]]; also found an unlisted LoRA-basis hazard |
+
+The pattern is worth stating plainly: **this list was built from filenames and file sizes, and a third of it was wrong.** It is a hypothesis list, not a finding list — and every entry has now been tested against the code rather than against its own plausibility.
+
 
 | Slice | Cost | Deliverable |
 | :--- | :--- | :--- |
