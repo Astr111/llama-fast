@@ -98,7 +98,7 @@ with `delta = (round_start − key_position) + offsets[d]`, `round_start = state
 
 ### 4. The GPU scoring kernel
 
-`src/ggml/src/ggml-cuda/triattention-score.cu` reimplements stages 1-3 as one kernel: grid `(n_cells, 1, 1)`, block `(freq_count, 1, 1)`, `smem = (hd + fc) * sizeof(float)` (`:352`). Per block (= one cache position) it dequantizes the head row into shared memory (`dequant_head_to_smem`, `:93-160`, one branch per supported `K_TYPE`), applies the inverse WHT rotation (`inverse_wht_rotation_128`, `:72-85`, built on `cooperative_fwht_128`, `:47-69`), applies inverse RoPE (`:233-256`), computes the same per-frequency score, then block-reduces to one float per position (`:304-321`). The launch dispatcher switches on `cfg.k_type` and passes `NEED_WHT_INV = true` only for `TURBO2_0`/`TURBO3_0` (`:366-392`).
+`src/ggml/src/ggml-cuda/triattention-score.cu` reimplements stages 1-3 as one kernel: grid `(n_cells, 1, 1)`, block `(freq_count, 1, 1)`, `smem = (hd + fc) * sizeof(float)` (`:352`). Per block (= one cache position) it dequantizes the head row into shared memory (`dequant_head_to_smem`, `:93-160`, one branch per supported `K_TYPE`), applies the inverse WHT rotation (`inverse_wht_rotation_128`, `:72-85`, built on `cooperative_fwht_128`, `:47-69`), applies inverse RoPE (`:233-256`), computes the same per-frequency score, then block-reduces to one float per position (`:304-321`). The launch dispatcher switches on `cfg.k_type` and passes `NEED_WHT_INV = true` only for `TURBO2_0`/`TURBO3_0` (`:366-386`).
 
 Two things matter for the target model:
 
@@ -126,7 +126,7 @@ case TRIATTENTION_TRIGGER_SLACK:
 The real algorithm, in order:
 
 1. **Enumerate** occupied cells from `cell_positions` (`:1096-1111`); bail out if `n_occupied <= budget`.
-2. **Partition** into protected and candidate cells. Two protection classes are counted together into `n_protected`: prompt prefix (`protect_prefill && pos < prefix_length`) and the recent window (`pos >= max_pos − divide_length + 1`) (`:1127-1146`). The recent window is not cosmetic: the comment at `:1118-1122` records that evicting the highest-position token would break the server's `seq_pos_max` bookkeeping.
+2. **Partition** into protected and candidate cells. Two protection classes are counted together into `n_protected`: prompt prefix (`protect_prefill && pos < prefix_length`) and the recent window (`pos >= max_pos − divide_length + 1`) (`:1127-1146`). The recent window is not cosmetic: the comment at `:1113-1122` records that evicting the highest-position token would break the server's `seq_pos_max` bookkeeping.
 3. `decode_budget = (budget > n_protected) ? (budget − n_protected) : 0` (`:1150`); bail if `n_decode <= decode_budget`.
 4. **Score** every candidate cell for every sampled head — GPU path at `:1166-1238` (one kernel launch per sampled head, all on the default stream), CPU fallback at `:1244-1301`.
 5. **Combine** per mode (below) and select `decode_budget` winners with `top_k_indices()` (`:851-883`, a `std::partial_sort` on descending score).
