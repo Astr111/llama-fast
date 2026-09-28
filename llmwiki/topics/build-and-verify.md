@@ -104,7 +104,7 @@ The figures on this page — 0 files in `template-instances/`, 138 `.cu` files i
 
 - Build paths, CUDA arch caveats, and the archive/shipped-binary facts: [[codebase-map]], [[v100-sxm2]], and README's build section ([[source-readme]]).
 - CMake ownership: `src/CMakeLists.txt`, `src/ggml/CMakeLists.txt`, `src/ggml/src/CMakeLists.txt`, `src/ggml/src/ggml-cuda/CMakeLists.txt:94-128`, `src/tools/CMakeLists.txt`, `src/tools/triattention-calibrate/CMakeLists.txt`, `src/tests/CMakeLists.txt`, `src/CMakePresets.json` (all read for this page).
-- Test surface: `src/tests/CMakeLists.txt:316` and `src/tests/test-backend-ops.cpp` (`:11071-11102`, `:11166-11248`, `:11275-11328`); zero `turbo` matches in that file.
+- Test surface: `src/tests/CMakeLists.txt:316` (backend ops), `:339-341` (PrismML type tests), and `src/tests/test-backend-ops.cpp` (`:11071-11102`, `:11166-11248`, `:11275-11328`); zero `turbo` matches in either file.
 - Why the backend test cannot settle the fork's open questions: [[gemm-dispatch]], [[performance-profile]], [[quantization]].
 
 ## Open questions
