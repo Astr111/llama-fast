@@ -90,4 +90,29 @@ The out-of-tree packer's manifest declares `normalized-signed-sylvester-walsh-ha
 ## [2026-09-28] gap | the token-selection layer had zero coverage
 Before `[[sampling]]`, no page in the vault mentioned `sampler` at all — the whole selection stage, including the parameters a server request can reach, was undocumented. The recorded effective-throughput trend (31.6 → 38.1+ t/s) still has no reproducible artifact: the acceptance statistics live at `src/tools/server/server-context.cpp:615-636` and no run output is checked in.
 
+## [2026-09-28] correction | the recurrent pre-fill was stated backwards on two pages
+`[[qwen35-architecture]]` and `[[hybrid-memory]]` claimed `llm_arch_is_recurrent(QWEN35) = true` filled `is_recr_impl` with 1 for every layer. The switch (`src/src/llama-arch.cpp:1068-1080`) names only MAMBA, MAMBA2, RWKV6, RWKV6QWEN2, RWKV7 and ARWKV7, and returns false by default, so `src/src/llama-model.cpp:1422` pre-fills **0**; the 48-of-64 schedule comes entirely from the interval loop, which assigns every entry. Behaviour was never in doubt — only the explanation was wrong. Found by `[[qwen35-variants]]` during wave 3, confirmed independently against the switch, and corrected in place on both pages with a dated note. (`llm_arch_is_hybrid(QWEN35) = true` was checked at the same time and is correct: `llama-arch.cpp:1096`.)
+
+## [2026-09-28] ingest | wave 3 — eight pages, the last known gaps
+Four new entities (`[[quantized-kernel-units]]`, `[[turbo-wht]]`, `[[rotation-data]]`, `[[qwen35-variants]]`), two topics (`[[release-artifacts]]`, `[[backend-parity]]`), and two source ingests (`[[source-hadamard-tied-output]]`, `[[source-kv-mean-center]]` with the matching `raw/` snapshots). Per-agent time: 1–6 minutes. Vault at 57 pages, lint clean, 8 recorded raw hashes verified against 8 files on disk.
+
+## [2026-09-28] find | no quantized-kernel unit knows a turbo type
+A case-insensitive sweep for `turbo` across `src/ggml/src/ggml-cuda/` returns **zero** hits in `mmf.cu`, `mmvf.cu`, `mmvq.cu`, `mmq.cu`, `mmq.cuh`, `vecdotq.cuh` and both `mmq-config-*.cuh`. The only CUDA turbo dot products in existence are the fused-attention ones (`vec_dot_fattn_vec_KQ_turbo{3,2,4}_0`). This is the mechanical basis of `[[tq-1-missing-gemm-kernels]]`, now stated per unit rather than globally, in `[[quantized-kernel-units]]`.
+
+## [2026-09-28] find | `k_turbo_wht_copy_tail` is unreachable in the op as built
+`ggml_turbo_wht` asserts `ne[0] % group_size == 0` (`src/ggml/src/ggml.c:6649`) and the CUDA support predicate requires `ne[0] % 64 == 0` (`ggml-cuda.cu:5493-5495`), so the tail kernel at `turbo-wht.cu:100` can never run — `tail_size` is always 0. A verified consequence of two reads, not a comment in the code. Recorded on `[[turbo-wht]]`.
+
+## [2026-09-28] find | the WHT op params were attributed to the wrong node
+`wht_group` is written onto the **`ggml_set_rows` result's** op-params (`src/src/llama-kv-cache.cpp:1586-1587, 1637-1638, 1663-1664`), not onto a `TURBO_WHT` node; the latter carries `op_params[0] = direction` and `op_params[4..7] = group_size` (`ggml.c:6657-6659`). Earlier pages implied a single op-param contract; `[[turbo-wht]]` and `[[walsh-hadamard-transform]]` now state the split. Also confirmed independently: `turbo_rotate_forward{,_64}` have no callers anywhere in `src/`.
+
+## [2026-09-28] find | the 590 KB rotation table has no recorded generator
+`src/src/turbo-rotation-data.h` is a generated 590 KB header of ±1/√n rotation constants, with no generator, script, seed or provenance note anywhere in the tree; `turbo-rotation-data-32.h` (36 KB) is **included by nothing** in this checkout. A large generated artifact with no reproduction path is a maintenance fact the sources never mention. See `[[rotation-data]]`.
+
+## [2026-09-28] note | a fourth rotation implementation, and a hint-driven side path
+`src/ggml/src/ggml-cuda/fwht.cu` exists alongside `turbo-wht.cu`, and neither has a graph op: there is **no** `GGML_OP_FWHT` in this tree, and both `fwht.cu` entry points are reached only through `GGML_HINT_SRC0_IS_HADAMARD` (`ggml-cuda.cu:1823`, `:3502`). Whether that file is upstream or a fork addition is `[UNVERIFIED]` without history. See `[[turbo-wht]]`, `[[backend-parity]]`.
+
+## [2026-09-28] find | `--kv-mean-center` is live in this fork, and nothing documented it
+The feature is wired end to end: `src/common/kv-mean-center.{h,cpp}`, the `k_cache_in` tag at `src/src/llama-graph.cpp:2958-2962`, a loader basis check (`src/src/llama-kv-cache.cpp:1702-1730`), a gate test and an F32-invariance test (`src/tests/test-kv-mean-center.cpp`), and a tool README. Neither source document mentions it. Ingested as `[[source-kv-mean-center]]`.
+
+
 

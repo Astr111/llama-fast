@@ -27,6 +27,8 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[source-triattention-api]] | The three-layer TriAttention API contract as documented | `raw/TRIATTENTION-API.md` |
 | [[source-agents-md]] | The repository constitution: edit boundaries, pipeline, wiki schema | `raw/AGENTS.md` |
 | [[source-llmwiki]] | The pattern this vault implements | `raw/llmwiki.txt` |
+| [[source-hadamard-tied-output]] | The project doc on the tied-output Hadamard fold | `raw/hadamard-tied-output.md` |
+| [[source-kv-mean-center]] | The KV mean-centering feature — live in this fork, with a test and a tool | `raw/kv-mean-center.md` |
 
 ## Entities (things)
 
@@ -34,6 +36,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | :--- | :--- |
 | [[ternary-bonsai-2-27b]] | The target model, read from its GGUF header: `PQ2_0`, `head_dim=256`, hybrid attention/SSM |
 | [[qwen35-architecture]] | The architecture the sources never name: 64 blocks, only 16 with a KV cache |
+| [[qwen35-variants]] | The neighbouring models that share the family, and how they differ |
 | [[hybrid-memory]] | How the engine keeps KV *and* recurrent state in one model |
 | [[gated-delta-net]] | The recurrence inside the 48 SSM blocks, and its per-sequence cost |
 | [[v100-sxm2]] | The deployment target and the capability gates that shape every design decision |
@@ -41,8 +44,11 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[turboquant]] | The KV-cache vector quantization scheme: types, geometry, rotation, fused dots |
 | [[innerq]] | InnerQ equalization — and the two competing state homes it lives in |
 | [[walsh-hadamard-transform]] | The rotation before quantization, and the three implementations of it |
+| [[turbo-wht]] | The op that actually runs on the KV path, and what `fwht.cu` is for |
+| [[rotation-data]] | The 590 KB of embedded rotation constants — and the generator nobody recorded |
 | [[prism-hadamard-weight-fold]] | The *model-side* Hadamard fold baked into the checkpoint — not the KV rotation |
 | [[prismml-weight-kernels]] | `PQ2_0`/`PTQ1_0` weight kernels and their arch reach (out of scope for edits) |
+| [[quantized-kernel-units]] | The mmf/mmvf/mmvq/mmq units and their type tables — none of which knows a turbo type |
 | [[cuda-graphs]] | `GGML_CUDA_GRAPH_OPT=1`: what graph reuse and concurrent streams actually buy |
 | [[speculative-decoding]] | The `draft-dflash` block-proposal path |
 | [[sampling]] | The token-selection chain and the parameters a request can reach |
@@ -92,7 +98,9 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[benchmarks]] | The two measurement suites, neither run on the deployment hardware |
 | [[codebase-map]] | Tree layout, custom-code locations, build system, and the missing template instances |
 | [[build-and-verify]] | How the tree is built, what it ships, and how a kernel change would be checked |
+| [[release-artifacts]] | What each shipped artifact is, and which one is usable on the target |
 | [[conversion-and-packing]] | How the `PQ2_0` artifact and the Hadamard fold were produced, and where that trail leaves the repo |
+| [[backend-parity]] | What the Vulkan/SYCL/Metal copies of this fork's ops reveal — and the turbo-KV gaps |
 | [[triattention-calibrate]] | The offline calibration tool, its profile format, and where doc and code diverge |
 | [[upstream-lineage]] | Three upstreams plus a paper, and what that implies for maintenance |
 | [[roadmap]] | The six recorded action items, plus findings the inventory never listed |
