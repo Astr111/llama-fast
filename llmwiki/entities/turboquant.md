@@ -96,8 +96,8 @@ The transform is `R = (1/√n)·D₂·H·D₁` with fixed ±1 sign arrays; its f
 | Direction | Applied to | Site |
 | :--- | :--- | :--- |
 | forward | **K and V at encode time**, inside the `SET_ROWS` kernels | `set-rows.cu:324-351` (turbo3), `:692-725` (turbo2), `:1039-1062` (turbo4) |
-| forward | **Q**, as a graph op, whenever the K cache is a turbo type | `llama-graph.cpp:2979-2988` (FA path), `:3100-3111` (MLA path), `:3295-3303` |
-| inverse | **the attention output**, as a graph op, whenever the V cache is a turbo type | `llama-graph.cpp:2696-2709` (FA), `:2777-2787` (non-FA) |
+| forward | **Q**, as a graph op, whenever the K cache is a turbo type | `llama-graph.cpp:2977-2988` (FA path), `:3100-3111` (MLA path), `:3292-3303` (ISWA path) |
+| inverse | **the attention output**, as a graph op, whenever the V cache is a turbo type | `llama-graph.cpp:2700-2709` (FA), `:2778-2787` (non-FA) |
 
 The point of rotating Q with the same `R` is that the K×Q dot product is preserved (`⟨Rq, Rk⟩ = ⟨q, k⟩`); the point of the inverse on the output is that V was stored rotated. The op itself is `GGML_OP_TURBO_WHT` (`src/ggml/include/ggml.h:586`), built by `ggml_turbo_wht()` (`src/ggml/src/ggml.c:6634-6670`) with `op_params = (direction, group_size)` and the InnerQ scale as `src[1]`; the CUDA implementation is `ggml_cuda_turbo_wht` in `turbo-wht.cu:117-174`, dispatched from `ggml-cuda.cu:2092-2093`; the CPU twin is `ggml_compute_forward_turbo_wht_f32` (`src/ggml/src/ggml-cpu/ops.cpp:12253-12331`, its own copy of the sign arrays at `:12250-12251`, dispatched at `:12336-12340`).
 
@@ -120,12 +120,12 @@ K and V cache tensors are created per layer per stream as `ggml_new_tensor_3d(ct
 Read paths, in the order they matter:
 
 - **Fused attention** (the hot path). `vec_dot_fattn_vec_KQ_turbo3_0` (`fattn-common.cuh:333-385`), `…_turbo2_0` (`:387-434`) and `…_turbo4_0` (`:436+`) dequantize K blocks inline and dot them with the (already rotated) Q half2/float2 pairs, and `dequantize_V_turbo3_0` / `_turbo2_0` / `_turbo4_0` (`:778`, `:838`, `:895`) do the same for V. They are selected through `get_vec_dot_KQ()` (`:954-980`) and `get_dequantize_V()` (`:982-1006`), and the allowed type pairs are registered at `fattn.cu:339-369` for turbo×{turbo,q8_0} (15 combinations when `GGML_CUDA_FA_ALL_QUANTS` is off) with the guard `ggml_cuda_fattn_kv_type_supported()` (`fattn.cu:382-399`); CMake names the 15 instantiation units at `CMakeLists.txt:125-139`, though `template-instances/` is empty in this checkout ([[codebase-map]]). `fattn-vec.cuh:87-95` is where turbo K/V are classified as "unquantized" for thread-count purposes — they are dequantized by hand, not through `vecdotq.cuh`.
-- **Generic dequantize**: `dequantize.cuh:154-176` (`dequantize_turbo4_0`/`_turbo3_0`/`_turbo2_0`, one `float2` per call, using the shared `turbo*_dequant_element` helpers in `turbo-quant.cuh:348-421`) reached from `convert.cu:664-669` / `:735-741` / `:772-777` / `:836-841` (`to_fp16`/`to_fp32`/`to_bf16`, both contiguous and strided variants) and hence from `cpy.cu`.
+- **Generic dequantize**: `dequantize.cuh:154-176` (`dequantize_turbo4_0`/`_turbo3_0`/`_turbo2_0`, one `float2` per call, using the shared `turbo*_dequant_element` helpers in `turbo-quant.cuh:348-354`, `:386-392`, `:417-421`) reached from `convert.cu:664-669` / `:735-741` / `:772-777` / `:836-841` (`to_fp16`/`to_fp32`/`to_bf16`, both contiguous and strided variants) and hence from `cpy.cu`.
 - **`GET_ROWS` does not support the turbo types**: `getrows.cu` has no `TURBO` case at all and its default arm aborts (`getrows.cu:415-417`), consistent with `supports_op` admitting turbo only for `GGML_OP_SET_ROWS` (`ggml-cuda.cu:5320-5336`).
 
 ### 6. The write path
 
-Encoding is `SET_ROWS` (per K/V element of the batch): `set_rows_cuda_turbo3` / `_turbo2` / `_turbo4` (`set-rows.cu:543`, `:888`, `:1107`) launch one block per (group, row) — `k_set_rows_turbo3<idx_t,GROUP_SIZE>` (`:237-410`, WHT `:324-351`), `k_set_rows_turbo2<…>` (`:608-770`, WHT `:692-725`), `k_set_rows_turbo4<idx_t>` (`:952-1102`, WHT `:1039-1062`). Each does: load the group → InnerQ accumulate/apply → parallel L2 norm → normalise → forward WHT → nearest-centroid index → pack → corrected norm. The tail kernels (`:422`, `:775`) are unreachable under the padding regime ([[tq-5-tail-elements]]).
+Encoding is `SET_ROWS` (per K/V element of the batch): `set_rows_cuda_turbo3` / `_turbo2` / `_turbo4` (`set-rows.cu:537`, `:884`, `:1104`) launch one block per (group, row) — `k_set_rows_turbo3<idx_t,GROUP_SIZE>` (`:237-410`, WHT `:324-351`), `k_set_rows_turbo2<…>` (`:608-770`, WHT `:692-725`), `k_set_rows_turbo4<idx_t>` (`:952-1102`, WHT `:1039-1062`). Each does: load the group → InnerQ accumulate/apply → parallel L2 norm → normalise → forward WHT → nearest-centroid index → pack → corrected norm. The tail kernels (`:422`, `:775`) are unreachable under the padding regime ([[tq-5-tail-elements]]).
 
 ### 7. There is no native tensor-core or matmul path
 
@@ -148,18 +148,18 @@ Turbo types appear in **no** matmul fast path. `grep -c TURBO` returns 0 for `mm
 | `src/ggml/src/ggml.c:6634-6670` | `ggml_turbo_wht()` op builder |
 | `src/ggml/src/ggml-turbo-quant.c` (627 lines) | CPU reference codec: `turbo_rotation`/QJL tables, centroid lookup, `quantize_row_turbo{3,2,4}_0_ref`, `dequantize_row_turbo{3,2,4}_0`, `quantize_turbo{3,2,4}_0` |
 | `src/ggml/src/ggml-cuda/turbo-quant.cuh` (421 lines) | centroid + midpoint tables `:23-40`, `:297-305`; WHT sign arrays `:47-79`; sequential `turbo_fwht_128`/`_64` and their dead wrappers `:88-139`; InnerQ statics `:147-157`; `quantize_f32_turbo4_0_block` `:336`, `quantize_f32_turbo3_0_block` `:370`, `quantize_f32_turbo2_0_block` `:405`; `turbo*_dequant_element` `:348-421` |
-| `src/ggml/src/ggml-cuda/set-rows.cu` | encoder kernels `k_set_rows_turbo3` `:237`, `k_set_rows_turbo2` `:606`, `k_set_rows_turbo4` `:950`; tail kernels `:422`, `:775`; launchers `:543`, `:888`, `:1107`; dispatch into `ggml-cuda.cu`'s `SET_ROWS` cases |
+| `src/ggml/src/ggml-cuda/set-rows.cu` | encoder kernels `k_set_rows_turbo3` `:237`, `k_set_rows_turbo2` `:608`, `k_set_rows_turbo4` `:952`; tail kernels `:422`, `:775`; launchers `:537`, `:884`, `:1104`; dispatch into `ggml-cuda.cu`'s `SET_ROWS` cases |
 | `src/ggml/src/ggml-cuda/dequantize.cuh:154-176` | `dequantize_turbo4_0`/`_turbo3_0`/`_turbo2_0` |
 | `src/ggml/src/ggml-cuda/convert.cu:664-669, 735-741, 772-777, 836-841` | fp16/fp32/bf16 conversion dispatch for the turbo types |
 | `src/ggml/src/ggml-cuda/cpy.cu`, `src/ggml/src/ggml-cuda/getrows.cu` | cpy reaches the turbo dequantizers through `dequantize.cuh`; `GET_ROWS` has no turbo case |
-| `src/ggml/src/ggml-cuda/turbo-wht.cu` / `.cuh` | `k_turbo_wht_f32<direction,group_size>` `:31-96`, tail pass-through `:100-114`, `ggml_cuda_turbo_wht` `:117-174` |
+| `src/ggml/src/ggml-cuda/turbo-wht.cu` / `.cuh` | `k_turbo_wht_f32<direction,group_size>` `:23-96`, tail pass-through `:100-114`, `ggml_cuda_turbo_wht` `:117-174`, launches `:151-160` |
 | `src/ggml/src/ggml-cuda/ggml-cuda.cu:2092-2093`, `:5325-5335` | `GGML_OP_TURBO_WHT` dispatch; `supports_op` for `SET_ROWS` |
 | `src/ggml/src/ggml-cuda/fattn-common.cuh:333, 387, 436, 778, 838, 895` | the only CUDA turbo dot products and V dequantizers |
 | `src/ggml/src/ggml-cuda/fattn.cu:339-369, 382-399` | registered FA type pairs and the KV-type support predicate |
 | `src/ggml/src/ggml-cuda/fattn-vec.cuh:87-95` | turbo K/V treated as "unquantized" for vec-kernel thread/row geometry |
-| `src/ggml/src/ggml-cuda/CMakeLists.txt:120-140` | the 15 `fattn-vec-instance-turbo*` translation units listed for the build |
+| `src/ggml/src/ggml-cuda/CMakeLists.txt:121-139` | the 15 `fattn-vec-instance-turbo*` translation units listed for the build |
 | `src/src/llama-kv-cache.cpp` | per-layer type selection + `TURBO_LAYER_ADAPTIVE` `:262-321`; head-dim padding `:323-360`; rotation/scale tensors `:370-378`, `:427-430`, `:536-541`; `wht_group` in `op_params` `:1586-1587`, `:1637-1638`, `:1663-1664` |
-| `src/src/llama-graph.cpp:2696-2709, 2777-2787, 2979-2988, 3100-3111, 3295-3303` | Q forward rotation, output inverse rotation |
+| `src/src/llama-graph.cpp:2700-2709, 2778-2787, 2977-2988, 3100-3111, 3292-3303` | Q forward rotation, output inverse rotation |
 | `src/src/turbo-rotation-data.h:3, :2054` | `TURBO_ROTATION_RT` (inverse) and `TURBO_ROTATION_R` |
 | `src/common/arg.cpp:304-345`, `:2442-2465` | allowed KV types and `-ctk`/`-ctv` |
 
