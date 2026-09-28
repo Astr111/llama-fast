@@ -59,6 +59,8 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[sampling]] | The token-selection chain and the parameters a request can reach |
 | [[tokenizer]] | Text ↔ ids: the vocabulary, tokenisation, and the return path to text |
 | [[runtime-switches]] | Every env var and flag the binaries actually read, and the one that does not exist |
+| [[chat-templates]] | Messages → prompt → tool calls: the layer between the tokenizer and the model |
+| [[kv-cache-dsv4]] | The second KV-cache engine in this tree — reachable, and without TriAttention |
 | [[qwen3-dflash-draft]] | The draft model itself |
 
 ## Concepts (ideas)
