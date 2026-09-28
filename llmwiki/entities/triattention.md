@@ -215,6 +215,6 @@ All three follow from the defaults above and are stated with the code that produ
 
 ## See also
 
-[[overview]] · [[v100-sxm2]] · [[ternary-bonsai-2-27b]] · [[kv-cache]] · [[kv-eviction]] · [[walsh-hadamard-transform]] · [[turboquant]] · [[innerq]] · [[quantization]] · [[gemm-dispatch]] · [[performance-profile]] · [[codebase-map]] · [[roadmap]] · [[upstream-lineage]] · [[benchmarks]] · [[triattention-calibrate]]
+[[overview]] · [[v100-sxm2]] · [[ternary-bonsai-2-27b]] · [[kv-cache]] · [[kv-eviction]] · [[walsh-hadamard-transform]] · [[turboquant]] · [[innerq]] · [[quantization]] · [[gemm-dispatch]] · [[cuda-graphs]] · [[speculative-decoding]] · [[performance-profile]] · [[codebase-map]] · [[roadmap]] · [[upstream-lineage]] · [[benchmarks]] · [[triattention-calibrate]]
 [[source-readme]] · [[source-state-md]] · [[source-triattention]] · [[source-triattention-api]]
 [[ta-1-wht-inversion-256]] · [[ta-2-budget-starvation]] · [[ta-3-cpu-fallback-transfers]] · [[ta-4-cooperative-fwht-race]] · [[ta-5-freq-scale-dead-code]] · [[ta-6-overlap-double-counting]] · [[ta-7-config-validation]]
