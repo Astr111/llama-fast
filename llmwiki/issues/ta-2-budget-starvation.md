@@ -29,6 +29,9 @@ Loss of all mid-context history on long agent prompts; the eviction mechanism re
 
 Dynamic budget scaling logic was designed during the audit but **not applied** per user request; needs implementation. ([[source-state-md]], §3 TA-2; also §5.4)
 
+> **Confirmed live (2026-09-29).** A serving run at `budget = 64`, `window = 32` logged every prune as `59 protected [prefix=27, recent=32]` — 59 of the 64 retained slots consumed by protection, leaving five for all history. The degeneration the issue predicts is the observed steady state, not a boundary case: at this ratio the pruner is maintaining a sliding window. Run and log on [[first-live-eviction]].
+
+
 ## Fix sketch
 
 Implement the dynamic `min_history_budget` logic in `triattention_prune_impl` (state.md §5.4): clamp `n_protected` (or floor `decode_budget`) so a minimum share of the budget is always reserved for scored historical tokens, instead of letting the prefix fully consume `budget - divide_length`.

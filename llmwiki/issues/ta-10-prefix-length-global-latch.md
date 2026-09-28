@@ -48,7 +48,7 @@ Related paths that inherit the latch: KV-sequence forks (`seq_cp`, `src/tools/se
 
 ## Status
 
-**Open, unlisted, unfixed.** Decided by reading; nothing was built or run ([[build-and-verify]]).
+**Open, unlisted, unfixed.** Decided by reading; nothing was built or run ([[build-and-verify]]). **Update (2026-09-29): observed live.** The settling experiment was performed — a serving run on the 4B model reports `prefix=27` in every prune line, identically at positions 96 through 416, while the request keeps generating. The latch holds the first prompt's length and does not follow the context. Run and log on [[first-live-eviction]].
 
 ## Fix sketch
 
