@@ -155,3 +155,4 @@ The calibration tool's product is one factor in the document's headline "**~40×
 
 [[source-triattention]] · [[source-triattention-api]] · [[triattention]] · [[kv-eviction]] · [[kv-cache]] · [[ternary-bonsai-2-27b]] · [[walsh-hadamard-transform]]
 [[ta-1-wht-inversion-256]] · [[ta-2-budget-starvation]] · [[ta-5-freq-scale-dead-code]] · [[ta-7-config-validation]] · [[scoring-correctness]] · [[benchmarks]] · [[codebase-map]]
+[[ta-11-calibration-post-rope-basis]] · [[ta-8-offset-max-zero-nan]] · [[ta-9-rope-scope-mismatch]]
