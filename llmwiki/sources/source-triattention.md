@@ -27,7 +27,7 @@ The document covers: the scoring formula and its symbol table; a `llama-server` 
 | TriAttention is calibration-guided trigonometric KV eviction; with TurboQuant 2–4 bit KV it gives **~40× effective KV memory reduction** | §Overview |
 | Calibration is offline and short: ~2K tokens, collecting pre-RoPE query statistics per (layer, head, frequency-band) | §How it works, step 1 |
 | Runtime scores *every* cached token; lowest-scoring are evicted back to the budget; prompt tokens can optionally be protected | §How it works, steps 2–3 |
-| Scoring formula `S(m) = (1/D) Σ_d Σ_f amp_f·fscale²_f·cos(ω_f·δ_d + φ_f) + excess_f·fscale²_f·|k_f|` with `amp_f = ‖E[q_f]‖·|k_f|`, `φ_f = angle(E[q_f]·conj(k_f))`, `ω_f = θ^(−2f/d)`, `δ_d = current_pos − key_pos + offset_d`, `excess_f = E[‖q_f‖] − ‖E[q_f]‖` | §Scoring formula |
+| Scoring formula `S(m) = (1/D) Σ_d Σ_f amp_f·fscale²_f·cos(ω_f·δ_d + φ_f) + excess_f·fscale²_f·\|k_f\|` with `amp_f = ‖E[q_f]‖·\|k_f\|`, `φ_f = angle(E[q_f]·conj(k_f))`, `ω_f = θ^(−2f/d)`, `δ_d = current_pos − key_pos + offset_d`, `excess_f = E[‖q_f‖] − ‖E[q_f]‖` | §Scoring formula |
 | Calibration is run as `python scripts/calibrate-triattention.py --model meta-llama/Llama-3.1-8B-Instruct --n-tokens 2048 --output …`, validated by `python scripts/validate-calibration.py …` | §Quick start |
 | CLI defaults: `--triattention-budget` 2048, `--triattention-window` 128, `--triattention-offset-max` 65536, mode `global`, trigger `interval`, agg `mean`, seed 0, normalize off, protect-prefill on, log off | §CLI arguments |
 | Three pruning modes: global (top-B by max-over-heads score), per-KV-head, per-layer-head | §Pruning modes |
