@@ -16,6 +16,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[codebase-map]] | Where anything lives in the tree, and whether it builds |
 | [[performance-profile]] | Where the GPU time goes, and which attributions survive contact with the code |
 | [[request-lifecycle]] | How one request actually flows: batch → graph → kernels → sampling |
+| [[forward-pass]] | The token path itself: ids → embeddings → 64 blocks → logits, tensor by tensor |
 | [[open-questions]] | Every unresolved question in the vault, ranked, with what each would take |
 
 ## Sources (`raw/` snapshots)
@@ -55,6 +56,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[cuda-graphs]] | `GGML_CUDA_GRAPH_OPT=1`: what graph reuse and concurrent streams actually buy |
 | [[speculative-decoding]] | The `draft-dflash` block-proposal path |
 | [[sampling]] | The token-selection chain and the parameters a request can reach |
+| [[tokenizer]] | Text ↔ ids: the vocabulary, tokenisation, and the return path to text |
 | [[qwen3-dflash-draft]] | The draft model itself |
 
 ## Concepts (ideas)
@@ -114,6 +116,7 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[open-questions]] | The whole unresolved backlog, classified by what it would take to close |
 | [[device-placement]] | Whether a TurboQuant node ever runs on the GPU — and the answer refutes TQ-1's premise |
 | [[decisions-pending]] | The choices the project owes, with each option's cost and a recommendation |
+| [[forward-pass]] | The data flow of one token through the engine, with shapes and the custom stacks placed in it |
 | [[triattention-calibrate]] | The offline calibration tool, its profile format, and where doc and code diverge |
 | [[upstream-lineage]] | Three upstreams plus a paper, and what that implies for maintenance |
 | [[roadmap]] | The six recorded action items, plus findings the inventory never listed |

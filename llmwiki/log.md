@@ -149,6 +149,14 @@ Ranked #1 in `[[open-questions]]`, and the answer is a defect rather than a doub
 ## [2026-09-28] note | the backlog now separates decisions from investigations
 `[[decisions-pending]]` states the six choices the project owes — the repair order for the confirmed defects, the canonical WHT, whether the KV path gets test coverage, whether to restore `template-instances/`, what happens to the orphaned rotation header and dead `PTQ1_0`, and whether the README's Ampere benchmark table gets annotated — each with its options, their cost, and a recommendation. Combined with `[[open-questions]]`, the vault now says not only what is unknown but **which unknowns are waiting on a person rather than on evidence**. Vault at 68 pages.
 
+## [2026-09-28] ingest | wave 6 — the token path, in both directions
+The vault documented control flow but never data flow; the user asked for the path from vocabulary through embedding to decoded text, and it is now two pages, one per subsystem.
+
+**`[[forward-pass]]` — ids to logits, tensor by tensor.** Input ids → the `token_embd.weight` lookup → the residual stream through the 64-block stack, with the hybrid routing deciding attention versus recurrence per layer → inside an attention block, QKV projection, the Q rotation, partial MRoPE, the KV write with its turbo quantisation and the fused `ggml_flash_attn_ext` read → inside a recurrent block, the GDN nodes → final norm → output projection → logits. The custom stacks are placed in the chain in one table (TriAttention prunes *before* the graph is built; TurboQuant acts on the KV write and read; the CUDA graph captures the per-token graph whole). Two facts it establishes that no page had: the graph applies rotation only to **Q on the way in and the output on the way out** — the K/V rotate-and-quantise must therefore happen inside the CUDA `set_rows` kernel, which makes that kernel the place to look for the KV-side WHT contract; and the output head question is settled by the model's tensor list (untied; the fold applies to `token_embd`, the one name the checkpoint's `inverse_weight_names` exempts).
+
+**`[[tokenizer]]` — text to ids and back.** The vocabulary (248 320 entries, GPT-2-style BPE with the `qwen35` pre-tokenizer), the merge-rank lookup, special-token handling and the BOS flag that controls it; then the return path — detokenisation, the partial-UTF-8 buffering a byte-level BPE token makes necessary, and **where a streamed piece becomes the response body** (`server-context.cpp:1768`). It carries a latent-bug flag worth noting: the defensive `[UNK_BYTE_0x…]` fallback (`llama-vocab.cpp:3360-3364`) appends the *whole* piece inside the marker rather than the one bad byte — unproven and untriggered, but exactly the class of multibyte defect the page exists to make findable. Neither source document mentions any of this: the vocabulary is documented nowhere in the vault until now.
+
+
 
 
 
