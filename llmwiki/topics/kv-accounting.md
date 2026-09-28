@@ -36,7 +36,7 @@ Qwen3.5 uses `head_dim = 256`, `n_head_kv = 4` (GQA group 6). From `src/src/llam
 - `n_embd_k_gqa = head_dim_k × n_head_kv = 256 × 4 = 1024`
 - `n_embd_v_gqa = head_dim_v × n_head_kv = 256 × 4 = 1024`
 
-The `is_recr()` rule for `qwen35` (interval 4, full-attention on layers 3, 7, 11, …, 63) is derived at `src/src/models/qwen35.cpp:20-29`; `is_recr(QWEN35) = false` at `src/src/llama-arch.cpp:1078-1080` means the interval rule drives every assignment. The KV cache is allocated with filter `!hparams.is_recr(il)` (`src/src/llama-memory-hybrid.cpp:44-64`, `src/src/llama-model.cpp:2787-2793`), giving **16 attention/KV layers and 48 SSM layers** — confirmed by the 16-layer filter on `layers` in `src/src/llama-kv-cache.cpp:194` and `:394`, and by the layer-count in the layer log line `:450` (`"%3d layers"`).
+The `is_recr()` rule for `qwen35` (interval 4, full-attention on layers 3, 7, 11, …, 63) is derived at `src/src/models/qwen35.cpp:20-29`; `is_recr(QWEN35) = false` at `src/src/llama-arch.cpp:1078-1080` means the interval rule drives every assignment. The KV cache is allocated with filter `!hparams.is_recr(il)` (`src/src/llama-memory-hybrid.cpp:44-64`, `src/src/llama-model.cpp:2787-2793`), giving **16 attention/KV layers and 48 SSM layers** — confirmed by the 16-layer filter on `layers` in `src/src/llama-kv-cache.cpp:194` and `:394`, and by the layer-count in the layer log line `:448` (`"%3d layers"`).
 
 ## Bytes per token (16 KV-bearing layers)
 
