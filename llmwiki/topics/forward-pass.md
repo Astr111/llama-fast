@@ -2,9 +2,9 @@
 title: Forward Pass — one token, id to logits
 type: topic
 status: current
-updated: 2026-09-28
+updated: 2026-09-29
 sources: [state.md, README.md]
-verified: [src/src/llama-graph.cpp, src/src/models/qwen35.cpp, src/src/llama-kv-cache.cpp, src/src/llama-model.cpp, src/common/sampling.cpp]
+verified: [src/src/llama-graph.cpp, src/src/models/qwen35.cpp, src/src/llama-kv-cache.cpp, src/src/llama-model.cpp, src/common/sampling.cpp, src/ggml/src/ggml-cuda/rope.cu, src/ggml/src/ggml-cuda/norm.cu, src/ggml/src/ggml-cuda/ggml-cuda.cu, src/ggml/src/ggml-cuda/fwht.cu, src/ggml/src/ggml-cuda/turbo-wht.cu, src/ggml/src/ggml-cuda/turbo-quant.cuh, src/ggml/src/ggml-cuda/triattention-score.cu, src/ggml/include/ggml.h]
 tags: [synthesis, graph, kv-cache, architecture]
 ---
 
@@ -120,6 +120,70 @@ Shapes from `[[qwen35-architecture]]` (GGUF-verified) and `[[prism-hadamard-weig
 - **Where exactly is K/V rotated on write?** The graph rotates only Q and the attention output with `ggml_turbo_wht`; `cpy_k`/`cpy_v` emit plain `set_rows` with a WHT group size in `op_params` (`src/src/llama-kv-cache.cpp:1581-1587`). The rotate+quantise step must therefore live in the CUDA `set_rows` kernel — read kernel-side here, not re-derived; joint with [[request-lifecycle]]'s identical open question `[UNVERIFIED]`.
 - **Non-rotary dims are rotated and quantized wholesale.** RoPE covers 64 of 256 head dims, yet TurboQuant's 128-element groups and the WHT rotation act on the full head; the 192 non-positional dims are treated like the rest by design (`[[qwen35-architecture]]`, itself `[UNVERIFIED]` on whether that is intended).
 - **Tied head is dead code for this artifact.** The loader supports `version 2`/`tied_output` with a latent embedding reused as the head (`src/src/llama-model.cpp:1345-1356`), but no artifact here exercises it; nothing in the repo states whether a tied variant of Bonsai-2-27B exists.
+
+## The kernels behind the rotations and the norms
+
+Two unrelated linear maps are called "rotation" in this fork, and they are never the same kernel. The positional rotation (RoPE) is the **attention path**; the TurboQuant rotation (a Walsh–Hadamard transform) is the **cache path**, applied on top of the already-roped row. What [[first-live-measurements]] sees as a doubling of `rms_norm_mul_rope_f32` is the point where the two contracts meet: the fused norm+rope kernel is the last kernel in the chain that still belongs to RoPE, and whether it can absorb the cache write determines which *instantiation* of it runs.
+
+### 1. Two rotations, two families of kernels
+
+| Rotation | Kernel symbols | Defined | Reached from |
+| :--- | :--- | :--- | :--- |
+| RoPE — dims `[0, n_rot)` of each head, attention path | `rope_norm<has_ff,T,D>`, `rope_neox<has_ff,T,D>`, `rope_multi<has_ff,T>`, `rope_vision<has_ff,T>`; fused form `rms_norm_mul_rope_f32<block_size,has_ff,D>` | `src/ggml/src/ggml-cuda/rope.cu:44`, `:123`, `:200`, `:294`, `:711` | `ggml_cuda_op_rope_impl` (`rope.cu:536`), dispatched from `GGML_OP_ROPE` (`ggml-cuda.cu:2309-2311`); the fused form only through `ggml_cuda_try_fuse` (`ggml-cuda.cu:4093-4101`) |
+| TurboQuant WHT — all `group_size` dims, KV write and turbo read path | `k_turbo_wht_f32<direction,group_size>` (`turbo-wht.cu:151-169`); `fwht_cuda<N,T,has_signs>` / `fwht_cuda_block` / `fwht_cuda_smem` (`fwht.cu:234-296`); in-kernel `turbo_rotate_forward` (`turbo-quant.cuh:125-128`), `inverse_wht_rotation_128` (`triattention-score.cu:72`) | `src/ggml/src/ggml-cuda/turbo-wht.cu`, `fwht.cu`, `turbo-quant.cuh` | `GGML_OP_TURBO_WHT` (`ggml-cuda.cu:2092-2094` → `ggml_cuda_turbo_wht`, `turbo-wht.cu:117`) for the graph-side Q pre-rotation and the attention-output inverse; `SET_ROWS` for the write side |
+
+They compose rather than substitute. A K row on its way into a turbo cache is: head RMSNorm → **RoPE** (`rope_multi` for this model) → optional mean-centre `ggml_sub` → optional 128-alignment `ggml_pad` → **WHT + quantisation inside `set_rows`** (`src/src/llama-kv-cache.cpp:1526-1587`; the WHT group is handed to the backend in `op_params`, `:1583-1587`, and the rotation itself is `turbo_rotate_forward`'s `signs1 → FWHT → signs2`, `turbo-quant.cuh:125-128`). On the read side Q gets the same WHT forward (`llama-graph.cpp:2976-2985`) and the attention output the inverse (`:2700-2708`), both as separate launches of `k_turbo_wht_f32` — which is why the phrase "no `turbo_wht` kernel appears" in [[first-live-measurements]] is a *name* observation: `ggml_turbo_wht` is the wrapper, the kernel symbol is `k_turbo_wht_f32<...>`. The one kernel where both contracts sit in a single launch is `rms_norm_mul_rope_f32`, and it serves RoPE only — it has no signs vector, no group size and no InnerQ parameter (`rope.cu:711-725`, [[innerq]]), so it cannot perform the WHT; a turbo-typed destination is not merely refused by the fusion predicate, it is unrepresentable in that kernel (`dst_type` is cast to `D ∈ {float, half}`, `rope.cu:924-939`).
+
+### 2. The fused kernel is a fusion, not an op
+
+`rms_norm_mul_rope_f32` has no `GGML_OP` of its own. `ggml_cuda_can_fuse` recognises exactly two subgraphs (`ggml-cuda.cu:3083-3111`):
+
+- `RMS_NORM → MUL → ROPE` (the Q-side shape: per-head norm, weight, RoPE), and
+- `RMS_NORM → MUL → ROPE → VIEW → SET_ROWS` (the K/V-side shape: the same three nodes plus `cpy_k`'s flattening view and the cache write, `src/src/llama-kv-cache.cpp:1577-1581`).
+
+The second form is the interesting one: it writes the roped row **straight into the KV cache**, because the driver takes its destination from the `SET_ROWS` tensor — `dst_d = set_rows->data; dst_type = set_rows->type;` and `row_indices`/`set_rows_stride` come from `set_rows->src[1]` and the row stride (`rope.cu:867-876`). Both instantiations are the same binary; only the template argument `D` differs (`rms_norm_mul_rope_cuda<D>`, `rope.cu:790`, launched as `<256,false,D>` or `<1024,false,D>` after `ncols < 1024`, `:822-848`). The kernel name's `f32` refers to its *input*; `D` is the output type and is the parameter the profile's `<(int)256,…>` abbreviation hides.
+
+### 3. Why a quantized cache moves the launch to the other instantiation
+
+The five-op form is gated on the destination type (`ggml_cuda_should_fuse_rope_set_rows`, `ggml-cuda.cu:2668-2698`):
+
+```
+if (set_rows->type != GGML_TYPE_F32 && set_rows->type != GGML_TYPE_F16) return false;   // :2679-2681
+if (mode != GGML_ROPE_TYPE_NORMAL && mode != GGML_ROPE_TYPE_NEOX)              return false;   // :2695-2698
+```
+
+A `TURBO3_0` cache row is neither F32 nor F16, so under `-ctk turbo3` the K chain falls to the three-op form, which writes a **F32 intermediate** (`dst_type == GGML_TYPE_F32` branch, `rope.cu:924-931`), and the cache write becomes a separate `set_rows` launch. Two further differences in `cpy_k` reinforce that: it inserts `ggml_sub` for the mean-centre bias (`src/src/llama-kv-cache.cpp:1535-1543`, [[kv-mean-center]]) and `ggml_pad` for 128-alignment (`:1551-1558`) *between* the ROPE node and the VIEW, so the five nodes are no longer consecutive and `ggml_can_fuse_subgraph` cannot match them anyway.
+
+Consequence for the trace, stated as precisely as the evidence allows. Under FP16 KV the K-side chain is served by the **`D = half` instantiation** writing the cache row itself; under turbo KV it is served by the **`D = float` instantiation** writing a buffer that `set_rows` then rotates and quantises. The launches quoted in [[first-live-measurements]] (`rms_norm_mul_rope_f32<(int)256,…>`: 108 instances / 0.31 ms FP16, 216 / 0.83 ms turbo) therefore most plausibly are: FP16 = two symbols of the same kernel (the F32 Q-side chain, 108; the F16 cache-writing chain, 108 — only one row shown), turbo = one merged F32 row (Q-side + K-side = 216), the F16 symbol having disappeared with the F16 cache. Two measurements fit that reading and not "RoPE is being run twice per head": (a) the neighbouring rows are *byte-identical* across the two traces (`rms_norm_f32<(int)1024,…>` 219/219, `quantize_q8_1` 472/472), so no norm was un-fused — only re-instantiated; (b) the per-instance cost moves exactly as an F32 destination would (0.31 ms / 108 = 2.9 µs → 0.83 ms / 216 = 3.8 µs). `[UNVERIFIED]` the published trace shows one row per configuration, so the alternative — that the turbo graph genuinely contains twice as many norm+rope chains — cannot be excluded from it. Nothing in `src/src/llama-graph.cpp` supports that alternative: every KV-type-conditional branch there inserts only `ggml_cont`, `ggml_pad`, `ggml_turbo_wht` and slicing (`:2700-2708`, `:2976-2985`, `:2993-2997`). The decisive observation is an nsys table that lists the `float` and `half` instantiations of this kernel separately: a FP16 run showing 108 + 108 on two rows means the total launch count is unchanged (216 in both) and only its split moved.
+
+Magnitude, for scale: +0.52 ms of fused-kernel time against a +170 ms wall-clock penalty (2.36 s → 2.53 s at n = 128, [[first-live-measurements]]) — 0.3 %. The rotation contract is visible in the trace; it is not what costs the 11 %.
+
+### 4. Partial / MRoPE: the kernel is parameterised, and that is the whole point
+
+All four RoPE kernels take the rotation span at runtime, from the node's `op_params`, not from their type or their launch shape (`ggml_cuda_op_rope_impl`, `rope.cu:580-604`):
+
+| Parameter | Source | Used as |
+| :--- | :--- | :--- |
+| `n_dims` (= `n_rot`, 64 here) | `op_params[1]` (`rope.cu:580`) | the kernel bounds test `if (i0 < n_offs \|\| i0 >= n_offs + n_dims)` (`rope.cu:97`, `:170`, `:239`) — everything outside is copied through, in place |
+| `n_offs` | `op_params[15]` (`rope.cu:584`) | offset of the rotated window (0 for this model; the fused kernel refuses non-zero, `ggml-cuda.cu:2745-2748`) |
+| `sections[4]` | `memcpy(&sections.v, op_params + 11, 4*sizeof(int))` (`rope.cu:604`) | the sector map in `rope_multi` (`rope.cu:220`, `:251-275`); the kernels assert at least one non-zero section (`:611-613`) |
+| frequency exponent | `theta_scale = powf(freq_base, -2.0f/n_dims)` (`rope.cu:388`, `:432`, `:477`, `:811`) | θ^(−2f/`n_dims`), *not* θ^(−2f/head_dim) |
+
+So 64-of-256 with sections `[11, 11, 10, 0]` is expressible and *is* expressed: only `[0,64)` rotates (in NEOX pairing — `x[i0/2 + n_offs/2]` against `x[i0/2 + n_offs/2 + n_dims/2]`, `rope.cu:192-196`, `:286-290`), the 192 remaining dims are copied unrotated, and the exponent is computed over 64. `src/ggml/include/ggml.h:1879-1884` documents the same contract from the graph side — `MROPE n_dims = 16 → [ttttyyxxttttyyxx00]`, `IMROPE n_dims = 16 → [ttyxttyxttyxttyx00]`, with "idx used for theta: [0123… until n_dims/2], not reset for each section". That is the model-side truth [[ta-9-rope-scope-mismatch]] must be inverted against, and it is why that fix sketch is a parameterisation problem: the scorer's inverse pairs `(f, f+128)` over all 256 dims with θ^(−2f/256), three independent deviations from this table.
+
+One scope fence worth recording: **the fused kernel cannot be the forward path for this model.** `ggml_cuda_should_fuse_rms_norm_mul_rope` accepts `NORMAL` (0) and `NEOX` (2) only (`ggml-cuda.cu:2735-2738`); `IMROPE` is 40 (`ggml.h:254`), so every qwen35 Q/K RoPE goes through `rope_multi` (`rope.cu:650-663`) with sections, unfused — and the fused kernel would also drop the sections entirely, since its driver never reads `op_params[11..14]` (`rope.cu:878-903`). The 108/216 measurement is from `Ternary-Bonsai-4B`, a NORMAL/NEOX model; it therefore constrains the fused path, not the partial-RoPE path, which this project's 27B never takes a fused kernel for.
+
+### 5. `GGML_CUDA_FWHT_LEGACY`
+
+The switch ([[runtime-switches]]) lives in exactly one place in this codebase: the tail of `fwht_launch`, `src/ggml/src/ggml-cuda/fwht.cu:273-286`.
+
+```
+static const bool legacy = getenv("GGML_CUDA_FWHT_LEGACY") != nullptr;
+if (legacy) {  // 512/1024/2048 -> fwht_cuda<NN,…>, 4096/8192 -> fwht_cuda_smem<NN,…>
+}              // default   -> fwht_cuda_block<NN, 256, …> for 512…8192
+```
+
+Widths 64/128/256 always use `fwht_cuda<N,T,has_signs>` (`fwht.cu:228-244`) and are unaffected. It does **not** appear in `rope.cu`, `norm.cu`, `turbo-wht.cu`, or in the `SET_ROWS`/`ROPE`/`RMS_NORM`/`TURBO_WHT` dispatch cases read here. And the widths it does select are wider than the KV path ever uses: `ggml_cuda_turbo_wht` asserts `group_size == 64 || group_size == 128` (`turbo-wht.cu:129-131`) and `cpy_k` always writes a WHT group of 128 (`src/src/llama-kv-cache.cpp:1585-1586`). So on this model the switch cannot change the rotation the cache sees — it is an A/B knob for a WHT width the TurboQuant path does not reach ([[turbo-wht]], [[walsh-hadamard-transform]]). Its one neighbouring use outside the KV path is the calibration/scoring side, `triattention-score.cu:72`'s own cooperative 128-point butterfly, which is hand-written and does not call `fwht_launch` at all.
 
 ## See also
 

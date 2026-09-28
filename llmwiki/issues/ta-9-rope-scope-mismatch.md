@@ -53,4 +53,4 @@ Make the inverse a parameterised function of the forward geometry rather than a 
 
 ## See also
 
-[[scoring-correctness]] · [[triattention]] · [[qwen35-architecture]] · [[walsh-hadamard-transform]] · [[ta-1-wht-inversion-256]] · [[ta-8-offset-max-zero-nan]] · [[ta-5-freq-scale-dead-code]] · [[roadmap]]
+[[scoring-correctness]] · [[triattention]] · [[qwen35-architecture]] · [[walsh-hadamard-transform]] · [[forward-pass]] · [[ta-1-wht-inversion-256]] · [[ta-8-offset-max-zero-nan]] · [[ta-5-freq-scale-dead-code]] · [[roadmap]]
