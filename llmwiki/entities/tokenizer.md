@@ -2,9 +2,9 @@
 title: Tokenizer (qwen35 BPE)
 type: entity
 status: current
-updated: 2026-09-28
+updated: 2026-09-29
 sources: [state.md, README.md]
-verified: [src/src/llama-vocab.cpp, src/common/common.cpp, src/tools/server/server-context.cpp, src/tools/triattention-calibrate/triattention-calibrate.cpp, src/tools/completion/completion.cpp]
+verified: [src/src/llama-vocab.cpp, src/src/unicode.cpp, src/src/unicode-data.cpp, src/src/unicode-data.h, src/src/unicode.h, src/src/llama-grammar.cpp, src/common/common.cpp, src/common/chat.cpp, src/tools/server/server-context.cpp, src/tools/server/server-common.cpp, src/tools/triattention-calibrate/triattention-calibrate.cpp, src/tools/completion/completion.cpp]
 tags: [tokenizer, bpe, utf8, streaming]
 ---
 
@@ -96,6 +96,98 @@ The naive implementation this guards against: emitting each sampled token's piec
 - **Double BOS/EOS is warned about, never deduplicated** (`:588-600`): with `add_special` on and a prompt that literally starts with the BOS string, the batch gets two BOS ids.
 - **No text → ids cache**: repeated identical prompts (chat re-send, calibrator corpus) re-run the full regex + merge pass every time; only ids → text is cached, and that cache is *all* 248 320 pieces at load (`:3009-3024`).
 - The qwen35-specific `add_bos` metadata value, the `byte_encode` flag, and the exact active regex strings were not re-read from source/GGUF this pass — see the `[UNVERIFIED]` marks above.
+
+## The unicode and UTF-8 layer
+
+Gap #10. Four files, and only one of them has logic:
+
+| File | Size | Role |
+| :--- | :--- | :--- |
+| `src/src/unicode-data.h` | 20 lines | `MAX_CODEPOINTS = 0x110000` (`:14`); `struct range_nfd { first, last, nfd }` (`:8-12`); five `extern` table declarations (`:16-20`) |
+| `src/src/unicode-data.cpp` | 7 034 lines / 168 KB | the tables and nothing else — five `const std::initializer_list`/`unordered_set` aggregates |
+| `src/src/unicode.cpp` | 1 408 lines / 55 KB | every operation: decode/encode, the two byte maps, category flags, and the per-model regex pre-splitters |
+| `src/src/unicode.h` | 111 lines | the API surface, `:92-111` |
+
+### What the tables are
+
+Extents read from `unicode-data.cpp`:
+
+- `unicode_ranges_flags` `:10-2284` — `{codepoint_start, uint16 flags}` runs (~2 040 entries), the tree's only encoding of Unicode general category plus whitespace/case/NFC properties. Consumed **eagerly**: `unicode_cpt_flags_array()` (`unicode.cpp:116-146`) walks the ranges into a `std::vector<unicode_cpt_flags>` of `MAX_CODEPOINTS = 1 114 112` entries on first use (a function-local static behind `unicode_cpt_flags_from_cpt`/`_from_utf8`, `:1147-1160`), then overlays `unicode_set_whitespace`, both case maps, and the NFD targets. `[INFERENCE]` — the vector is ~4 MiB if the flag bitfield packs into 32 bits; the allocation happens on the first tokenization, not at vocab load.
+- `unicode_set_whitespace` `:2286-2312`; `unicode_map_lowercase` `:2315-3749`; `unicode_map_uppercase` `:3752-5203` (binary-searched by `unicode_tolower`, `unicode.cpp:1172-1182` — there is **no** `unicode_toupper`); `unicode_ranges_nfd` `:5205-7034`.
+
+### What `unicode.cpp` provides
+
+- **Byte length of a lead byte** — `unicode_len_utf8` `:16-20`, a high-nibble lookup `{1×12, 2, 2, 3, 4}`. Structural only; it does not validate.
+- **Decode** — `unicode_cpt_from_utf8` `:30-60` does validate (continuation bytes must be `0b10xxxxxx`, truncation rejected) and throws `std::invalid_argument`. `unicode_cpts_from_utf8` `:1130-1144` wraps it and **swallows** the throw: it substitutes U+FFFD and advances one byte. *No malformed UTF-8 escapes this layer as an exception*; it degrades silently to replacement characters.
+- **Encode** — `unicode_cpt_to_utf8` `:1088-1114`.
+- **The GPT-2 byte↔unicode maps** — `unicode_byte_to_utf8_map()` `:148-170` and its inverse `unicode_utf8_to_byte_map()` `:172-193`, lazily-built function-local statics behind `unicode_byte_to_utf8` `:1162-1165` / `unicode_utf8_to_byte` `:1167-1170`; both use `map.at(...)`, so a miss **throws `std::out_of_range`**. Coverage is exactly 256 codepoints: U+0021–U+007E (94), U+00A1–U+00AC (12), U+00AE–U+00FF (82), then U+0100–U+0143 (68) for the bytes with no Latin-1 glyph. Every other codepoint — `▁` U+2581, `中`, U+FFFD, U+2192 — is a miss.
+- **Pre-tokenizer split** — `unicode_regex_split` `:1216ff` (tail after `:1270` not read this pass `[UNVERIFIED]`), which collapses codepoints to one byte each when a regex uses `\p{…}` (tables at `:1218-1250`) and dispatches via `unicode_regex_split_custom` `:1050-1087` to hand-written matchers: `gpt2` `:215`, `llama3` `:333`, `qwen2` `:474`, **`qwen35` `:610`**, `kimi_k2` `:777`, `afmoe` `:948`, `newlines` `:1023`, else the STL fallback `unicode_regex_split_stl` `:739`. When the caller passes `byte_encode = true`, `unicode_byte_encoding_process` `:196-212` byte-encodes every byte of every word through `unicode_byte_to_utf8` before BPE lookup.
+- Smaller surface: `unicode_cpts_to_utf8` `:22`, `unicode_cpts_normalize_nfd` `:1117`, `unicode_cpt_is_han` `:1184-1214` (`[UNVERIFIED]` — no caller outside its own declaration was found, but the grep for it was not individually exhaustive).
+
+### Which parts the tokenizer path depends on
+
+| Tokenizer stage | unicode symbol | file:line |
+| :--- | :--- | :--- |
+| word split (both BPE + SPM) | `unicode_regex_split` (+ `byte_encode`) | `src/src/llama-vocab.cpp:605`; `src/src/unicode.cpp:1216, 1050` |
+| BPE symbol split into UTF-8 chars | `unicode_len_utf8` | `src/src/llama-vocab.cpp:123`, `:632` |
+| byte-encode the split words (all byte-level BPE) | `unicode_byte_to_utf8` | `src/src/unicode.cpp:207` |
+| BPE leftovers → single-byte vocab rows | `unicode_byte_to_utf8` | `src/src/llama-vocab.cpp:704-706` |
+| piece → text (detokenization) | `unicode_cpts_from_utf8`, `unicode_cpt_to_utf8`, `unicode_utf8_to_byte` | `src/src/llama-vocab.cpp:3354-3358` |
+| SPM/UGM normalizer + WPM | `unicode_cpts_from_utf8`, `unicode_cpt_to_utf8`, `unicode_cpts_normalize_nfd`, `unicode_tolower`, `unicode_len_utf8`, flag predicates | `src/src/llama-vocab.cpp:819-845`, `:987`, `:1388-1465`, `:1728-1733` |
+
+The target model uses none of the flag predicates on the tokenize path: `qwen35` is a byte-level pre-split (`byte_encode = true`), so the codepoint *category* tables never run for it — its cost is the regex matcher plus the two byte maps.
+
+### Verdict on the `[UNK_BYTE_0x…]` fallback: real defect; unreachable for qwen35; live for raw-UTF-8 BPE pre-types
+
+The code (`src/src/llama-vocab.cpp:3351-3366`), quoted in full because the argument name is the whole point:
+
+```cpp
+static std::string llama_decode_text(const std::string & text) {          // :3351
+    std::string decoded_text;
+
+    const auto cpts = unicode_cpts_from_utf8(text);                        // :3354
+    for (const auto cpt : cpts) {
+        const auto utf8 = unicode_cpt_to_utf8(cpt);                        // :3356
+        try {
+            decoded_text += unicode_utf8_to_byte(utf8);                    // :3358  map.at() -> may throw
+        } catch (const std::out_of_range & /*e*/) {
+            decoded_text += "[UNK_BYTE_0x";                                // :3360
+            for (const auto c : utf8) {
+                decoded_text += format("%02x", (uint8_t) c);
+            }
+            decoded_text += text + "]";                                    // :3364  <-- whole piece, not `utf8`
+        }
+    }
+    return decoded_text;
+}
+```
+
+`:3364` appends **`text`, the function's entire argument** — the token's stored piece — not the single codepoint `utf8` whose hex was printed one line earlier. The earlier slice's reading was right:
+
+- the hex in the marker is correct (it comes from `utf8`), the payload is not;
+- a piece with *k* out-of-map codepoints gets the whole piece appended *k* times;
+- the decoded prefix is still concatenated, so the output is `«decoded prefix»[UNK_BYTE_0x…«raw piece»]` — the piece appears twice, once in each encoding, rather than being substituted.
+
+**Reachability.** `llama_decode_text` has exactly one caller: `impl::token_to_piece`, BPE branch, `LLAMA_TOKEN_ATTR_NORMAL`, only when `escape_whitespaces == false` (`src/src/llama-vocab.cpp:3642-3649`). Two facts pin it down:
+
+1. `escape_whitespaces` is false for **every** BPE model — the BPE init branch sets it (`:2131`), and the only two sites raising it again are the `gemma4` and `sarvam-moe` pre-names (`:2205`, `:2209`), i.e. exactly the two SPM-style raw-UTF-8 pre-types that would otherwise trip the fallback. That is the guard rail around this code.
+2. The catch needs a piece codepoint outside the 256-entry map. `LLAMA_VOCAB_PRE_TYPE_QWEN35` has **no** case in the `byte_encode` switch (`:498-560`), so it keeps the default `byte_encode = true` (`:558`) → its NORMAL pieces are byte-encoded by construction → *every* codepoint is in the map → **the catch cannot fire for this model, for any prompt, token or correctly-built GGUF.** The page's condition ("reachable only if a piece contains a codepoint outside the 256-byte map") is correct and can be strengthened to: dead code on the qwen35 path.
+
+Where it is live: a BPE model whose pre-type sets `byte_encode = false` **and** leaves `escape_whitespaces = false`. The only three `byte_encode = false` sites are `:520` (GEMMA4), `:528` (SARVAM_MOE) and `:543` (`LLAMA_VOCAB_PRE_TYPE_WHITESPACE`, `:538-544`, the jinaai/jina-embeddings-v2-base-zh whitespace pre-tokenizer). The first two are covered by rule 1; **WHITESPACE is not**. There the vocab keeps raw UTF-8 pieces, so any NORMAL token containing a codepoint outside the 256-set — any CJK character, any `▁` space marker, emoji — takes the catch. `[UNVERIFIED]` which `tokenizer.ggml.pre` string selects `LLAMA_VOCAB_PRE_TYPE_WHITESPACE` (the jina branch at `:2211-2213` was read only as a condition) and whether a real jina GGUF stores raw-UTF-8 pieces.
+
+**Blast radius when it fires.** The string is produced during the *load-time* piece-cache build — `cache[id] = token_to_piece_for_cache(id, true)` for all `n_tokens` at `:3016` (`token_to_piece_for_cache` `:3331-3345`, called with `special = true`) — and `impl::token_to_piece(llama_token)` then just returns `cache_token_to_piece.at(token)` (`:3700-3702`). So the marker string *is* that token's detokenization everywhere: server body ([[server-layer]]), prompt echo, CLI. It never throws, never logs, never corrupts memory. Silent text corruption is why it survived a slice without being noticed.
+
+> Contradiction (2026-09-29): the *Known issues* bullet frames the trigger as "a malformed sequence" and the bug as merely latent/untriggered. Read against the code: (a) malformed UTF-8 is not needed — `unicode_cpts_from_utf8` (`unicode.cpp:1130-1144`) rewrites invalid bytes to U+FFFD, and U+FFFD is itself a map miss, so garbage *does* fire it; but a perfectly well-formed non-Latin-1 codepoint fires it too, which makes it the **normal** case for a raw-UTF-8 pre-type, not an edge case; (b) it is not merely untriggered — it is unreachable for this engine's model (`byte_encode = true` at `:558`, no QWEN35 override) while live for `LLAMA_VOCAB_PRE_TYPE_WHITESPACE`-class models built by the same binary. Verdict: real defect at `:3364`, wrong `text` instead of `utf8`; not a qwen35 bug.
+
+### Do the chat and grammar paths share this layer?
+
+**Grammar ([[sampling]]) does not share `unicode.cpp` — it has a private, second UTF-8 decoder.** `src/src/llama-grammar.cpp` defines `decode_utf8(const char *)` `:18-32` and `decode_utf8(const std::string &, llama_partial_utf8)` `:34-92` (with `lookup` `{1×8, 0,0,0,0, 2,2,3,4}` — the 0 entries are the "this cannot start a sequence" case), plus `llama_grammar_match_partial_char` `:791-800` for codepoints split across tokens. Its only touch of this layer is *indirect and one-way*: candidate text comes from `grammar.vocab->token_to_piece(id)` (`:1376`, `:1399`), i.e. the same cached string `llama_decode_text` produced. If the marker bug fired, the grammar would see `[UNK_BYTE_0x…]`-shaped ASCII, decode it happily, and **accept it as legal content** — the constrained output would carry the marker instead of the intended characters, and the token would not be masked away, because from the grammar's viewpoint the text is well-formed. That is a different visible failure from the unconstrained path (garbage that passes a grammar, rather than garbage that is merely printed).
+
+**The Jinja/chat path ([[chat-templates]]) touches it once.** `src/common/chat.cpp:824` calls `common_token_to_piece(vocab, token, true)` — the same `impl::token_to_piece` (with `special = true`); nothing else in that file mentions unicode/UTF-8, so the template renderer itself passes raw bytes through and never enters the codepoint layer. `[UNVERIFIED]` — the purpose of that call site (context at `:824` not read).
+
+**The server does not use this layer at all.** The streaming partial-sequence guard uses a *separate*, server-local validator, `validate_utf8` (`src/tools/server/server-common.cpp:887`), called at `server-context.cpp:1775`, `server-task.cpp:268,286` and `server-tools.cpp:48`. So the tree carries two independent UTF-8 validators (`unicode_cpt_from_utf8` here, `validate_utf8` there) with no shared code — a divergence between them is invisible to both. `[INFERENCE]` — based on a repo-wide grep for the `unicode_*` symbols, which found no hits under `src/tools/`.
+
+**Error propagation.** No exception from this layer reaches [[forward-pass]] or [[server-layer]]: `unicode_cpt_from_utf8`'s `std::invalid_argument` is eaten in `unicode_cpts_from_utf8`, and `unicode_utf8_to_byte`'s `std::out_of_range` is the only one that escapes `unicode.cpp` — caught one frame up inside `llama_decode_text`, and only on the BPE detokenization path. The layer's failure mode is always *wrong text*, never a crash.
 
 ## See also
 
