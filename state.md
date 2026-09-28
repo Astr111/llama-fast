@@ -1,0 +1,129 @@
+# Project State: llama-fast (Custom llama.cpp Inference Engine)
+
+**Date:** 2026-09-28
+**Hardware Target:** Tesla V100-SXM2-16GB (Volta sm_70, 900 GB/s HBM2, no INT Tensor Cores)
+**OS / Stack:** Ubuntu 22.04 LTS, CUDA 12.4
+**Models:**
+*   **Target:** `Ternary-Bonsai-2-27B-PQ2_0.gguf` (`head_dim=256`)
+*   **Draft:** `Qwen3.8-27B-DFlash2-Q4_K_M.gguf`
+**Key Optimizations:** Speculative Decoding (`draft-dflash`, max 5), TurboQuant KV Cache (`turbo3` Keys + `q8_0` Values), TriAttention KV Eviction (budget 4096, window 512), CUDA Graphs.
+**Benchmarks:** Terminal-Bench 2.0 (MR Subset 39), Harbor 0.1.x, Nsight Systems.
+
+---
+
+## 1. Executive Summary & Resolved Issues
+
+### Performance Profiling Conclusions
+1.  **CUDA Graph Reuse:** Does *not* accumulate speed improvements over time. Launch overhead reduction is a constant one-time saving (~25µs vs 16-64ms). Observed decode degradation (15.75ms -> 19.43ms) correlates with unbounded KV attention costs as context grows, not graph reuse count.
+2.  **Decode Speed Growth (40 -> 69 tok/s):** Traced to speculative decoding (`draft-dflash`). As the agent generates repetitive CLI/code patterns, context warms up and acceptance rates grow, shifting effective throughput from ~31.6 t/s to ~38.1+ t/s.
+3.  **Nsight Profiling Anomaly:** TriAttention consumes only 0.91% of GPU time, but `magma_sgemmEx_kernel<float, __nv_bfloat16>` consumes 38.81% (157ms). This is caused by TurboQuant types lacking native GEMM kernels (see Issue TQ-1).
+
+---
+
+## 2. Active Codebases
+
+*   **Publication Repository (Source of Truth):** `/home/ms/Загрузки/llama-fast/`
+*   **Active Working Copy (Broken WHT):** `/home/ms/llama-fast/llama.cpp/`
+*   **Fixed Release Copy:** `/home/ms/llama-fast/Release/`
+*   **TurboQuant Fork:** `/home/ms/llama-cpp-turboquant/`
+
+---
+
+## 3. Known Issues: TriAttention
+
+### TA-1. [CRITICAL] WHT Inversion Bug for `head_dim=256`
+*   **File:** `ggml/src/ggml-cuda/triattention-score.cu` (active working branch)
+*   **Description:** The GPU scoring kernel completely skips Walsh-Hadamard Transform (WHT) inversion for models with `head_dim=256`. The condition `if (padded_hd == 128 && f < 64)` evaluates to false when `padded_hd=256`, leaving the `NEED_WHT_INV` block empty.
+*   **Impact:** KV cache is scored using non-inverted keys, resulting in random eviction and severe generation quality degradation.
+*   **Status:** Fixed in `/home/ms/llama-fast/Release/` (uses dynamic `wht_group` calculation), but **not yet ported** to the active publication repository.
+
+### TA-2. [HIGH] Budget Starvation on Long Prefixes
+*   **File:** `src/llama-triattention.cpp` (`triattention_prune_impl`)
+*   **Description:** The formula `decode_budget = budget - n_protected` drops to zero when `prefix_length + divide_length >= budget`. For a 4096 budget and >3500 token system prompts, all historical tokens between the prefix and the 512-token recent window are instantly evicted.
+*   **Impact:** TriAttention degenerates into a pure sliding window. Agent benchmarks lose reasoning context; speculative decoding acceptance rate plummets. GPU/CPU scoring pipelines execute uselessly for `B=0`.
+*   **Status:** Dynamic budget scaling logic was designed during audit but **not applied** per user request. Needs implementation.
+
+### TA-3. [HIGH] CPU Fallback Synchronous D2H Transfers
+*   **File:** `src/llama-triattention.cpp` (`triattention_dequant_kv_head`)
+*   **Description:** If GPU initialization fails, the CPU fallback path calls `ggml_backend_tensor_get()` (synchronous `cudaMemcpy`) for *every single KV cell individually* inside a nested loop.
+*   **Impact:** For `n_decode=4096` and `head_dim=256`, this triggers ~4096 separate 1KB D2H transfers, causing 15–30 second pipeline stalls instead of milliseconds.
+*   **Status:** Unresolved. Requires batched transfers or strict GPU-only enforcement.
+
+### TA-4. [MEDIUM] Race Condition in `cooperative_fwht_128`
+*   **File:** `ggml/src/ggml-cuda/triattention-score.cu`
+*   **Description:** Shared memory WHT rotation assumes all 64 warp threads are active. If `active=true` but `tid >= 64`, warp divergence or shared memory OOB access may occur if exit conditions aren't perfectly synchronized.
+*   **Impact:** Undefined behavior on Volta (sm_70); potential score corruption.
+*   **Status:** Unresolved. Requires warp-level primitive audit.
+
+### TA-5. [MEDIUM] Dead Code: `freq_scale_sq` Always 1.0
+*   **File:** `src/llama-triattention.cpp` (calibration)
+*   **Description:** Computed via `cosf(omega[f] * 0.0f)` and `sinf(omega[f] * 0.0f)`, which always yields `c=1.0, s=0.0` -> `freq_scale_sq = 1.0`. Trigonometric scaling is effectively disabled.
+*   **Impact:** Loss of scoring precision; implementation diverges from the paper's formulas.
+*   **Status:** Unresolved. Needs verification if intentional simplification or init bug.
+
+### TA-6. [LOW] Overlap Double-Counting Risk
+*   **File:** `src/llama-triattention.cpp`
+*   **Description:** While `if (is_prefix || is_recent)` correctly counts each token once, future patches calculating `max_protected` must account for overlap between `recent_threshold` and `prefix_length` to avoid overestimating protected cells.
+*   **Status:** Documented for future patching.
+
+### TA-7. [LOW] Missing Configuration Validation
+*   **File:** `src/llama-triattention.cpp` (`triattention_init`)
+*   **Description:** No check for physical incompatibility between `budget`, `prefix_length`, and `divide_length`. Users get no warning if their prompt length guarantees immediate history eviction.
+*   **Status:** Unresolved. Needs warning/error emission.
+
+---
+
+## 4. Known Issues: TurboQuant
+
+### TQ-1. [CRITICAL] Missing Native GEMM Kernels -> cuBLAS/MAGMA Fallback
+*   **Files:** `ggml-cuda/mmq.cu`, `ggml-cuda/mmvq.cu`, `ggml-cuda/ggml-cuda.cu`
+*   **Description:** `GGML_TYPE_TURBO2_0`, `TURBO3_0`, and `TURBO4_0` are **not listed** in `ggml_cuda_should_use_mmq()` or `ggml_cuda_should_use_mmvq()`. Consequently, `ggml_cuda_mul_mat()` dispatch bypasses all custom kernels (mmq, mmvq, mmvf) and falls back to `ggml_cuda_mul_mat_cublas()`.
+*   **Impact:** Attention score computation (K×Q GEMM) dequantizes the entire K-cache via slow generic paths. This is the root cause of `magma_sgemmEx` consuming 38.8% of GPU time. On V100 (no INT Tensor Cores), this is catastrophic for throughput.
+*   **Status:** Unresolved. Requires implementing `vec_dot_turboX()` in `vecdotq.cuh` and adding types to MMQ/MMVQ dispatch, or writing a dedicated dequant+GEMM kernel.
+
+### TQ-2. [HIGH] InnerQ Host State Thread Safety Violation
+*   **File:** `ggml-cuda/turbo-quant.cuh` (lines 154-157)
+*   **Description:** Variables `innerq_enabled`, `innerq_target_tokens`, `innerq_strength`, `innerq_initialized` are declared as `static` (file-scope) in a header included by multiple translation units (`set-rows.cu`, `dequantize.cuh`, etc.). Each TU gets its own independent copy.
+*   **Impact:** Calibration triggered in one TU may never be visible to `turbo_innerq_check_finalize()` in another TU. InnerQ may silently fail to activate depending on compilation/link order.
+*   **Status:** Unresolved. Must move host-side state to a dedicated `.cu` file with `extern` declarations.
+
+### TQ-3. [HIGH] InnerQ Device State Multi-GPU Unsafe
+*   **File:** `ggml-cuda/turbo-quant.cuh` (lines 147-152)
+*   **Description:** Device variables (`d_innerq_scale`, `d_innerq_sq_accum`, etc.) are `static __device__` in a header. `cudaMemcpyToSymbol` only targets the *current* device.
+*   **Impact:** In multi-GPU (tensor parallelism) setups, scales upload to only one GPU. Others use zero/stale values, corrupting quantization.
+*   **Status:** Unresolved. Requires explicit per-device init loop or binding to `ggml_backend_cuda_context`.
+
+### TQ-4. [HIGH] Sequential vs Parallel WHT Numerical Mismatch
+*   **File:** `ggml-cuda/turbo-quant.cuh` (lines 88-106) vs `ggml-cuda/set-rows.cu` (lines 332-343)
+*   **Description:** `turbo_fwht_128()` in the header is a sequential single-thread loop. `set-rows.cu` uses a parallel shared-memory butterfly with `__syncthreads()`. Floating-point operation ordering differs.
+*   **Impact:** If `turbo_rotate_forward()` is ever called outside `set-rows.cu` (e.g., in a future dequant kernel), results will numerically mismatch the encoding process, causing silent accuracy loss.
+*   **Status:** Unresolved. Needs unified WHT implementation or strict usage boundaries.
+
+### TQ-5. [MEDIUM] Tail Elements: No Rotation, No InnerQ
+*   **File:** `ggml-cuda/set-rows.cu` (kernel `k_set_rows_turbo3_tail`)
+*   **Description:** When `head_dim % GROUP_SIZE != 0`, tail elements are quantized without WHT rotation or InnerQ scaling. Dequantization in `dequantize.cuh` has no special handling for tails.
+*   **Impact:** Models with non-aligned `head_dim` (e.g., GLM 576) suffer systematic quantization errors in tail channels. InnerQ calibration ignores these channels.
+*   **Status:** Unresolved. Requires padding or partial-group WHT.
+
+### TQ-6. [MEDIUM] InnerQ Calibration Race Condition
+*   **File:** `ggml-cuda/set-rows.cu` (lines 288-290)
+*   **Description:** `if (j == 0) atomicAdd(&d_innerq_count, 1);` relies on `j` mapping exactly to one thread per block. While true for `GROUP_SIZE=128` with 128 threads, changes to block dimensions could cause overcount/undercount.
+*   **Impact:** Incorrect RMS estimates -> wrong InnerQ scales.
+*   **Status:** Unresolved. Should use `threadIdx.x == 0` explicitly.
+
+### TQ-7. [MEDIUM] `INNERQ_MAX_CHANNELS = 128` Hard Limit
+*   **File:** `ggml-cuda/turbo-innerq.cuh`
+*   **Description:** Maximum channel limit is hardcoded to 128.
+*   **Impact:** Models with `head_dim=256` (like Ternary-Bonsai-2-27B) cannot fully utilize InnerQ equalization across all channels.
+*   **Status:** Unresolved.
+
+---
+
+## 5. Pending Action Items
+
+1.  **Port WHT Fix:** Apply the dynamic `wht_group` fix from `Release/src/ggml/src/ggml-cuda/triattention-score.cu` to the publication repository (`/home/ms/Загрузки/llama-fast/...`).
+2.  **Implement TurboQuant GEMM (TQ-1):** Write `vec_dot_turbo3_0` and register it in MMQ/MMVQ dispatch to eliminate the 38.8% MAGMA fallback overhead on V100.
+3.  **Refactor InnerQ State (TQ-2, TQ-3):** Move `static` host/device variables out of `turbo-quant.cuh` into proper TU-scoped or context-scoped storage to ensure thread safety and multi-GPU support.
+4.  **Apply TriAttention Budget Scaling (TA-2):** Implement dynamic `min_history_budget` logic in `triattention_prune_impl` to prevent context starvation during long agent runs.
+5.  **Batch CPU Fallback Transfers (TA-3):** Refactor `triattention_dequant_kv_head` to use bulk `cudaMemcpy` instead of per-cell synchronous transfers.
+6.  **Unify WHT Implementations (TQ-4):** Ensure numerical consistency between `turbo_fwht_128` and `set-rows.cu` butterfly kernels.
