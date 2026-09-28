@@ -28,15 +28,30 @@ Items 1 and 2 are the current planning focus: they were selected as the first [[
 ## Evidence
 
 - Items 1–6 as written by the user: [[source-state-md]] §5, each already cross-referenced to its issue page above.
-- Item 2's payoff estimate is [[performance-profile]]'s 38.81 % / 157 ms MAGMA share; item 2's mechanism is [[gemm-dispatch]].
-- Item 1's target fix is described as already existing in an external `Release/` checkout — `[UNVERIFIED]` from inside this repository; porting it requires that checkout to be reachable.
+- Item 2's mechanism is [[gemm-dispatch]].
 - Item 3 is a three-issue bundle because InnerQ's state problems share one root cause: host/device state living in a header instead of a translation unit or a backend context.
+- Item 1's target fix is described as already existing in an external `Release/` checkout. **That checkout is absent from this machine** — `/home/ms/llama-fast/` has no `Release/` directory, checked 2026-09-28 — so item 1 is a port from an unreachable source, not a routine copy.
+- Item 5's payoff, item 6's premise, and item 4's regime all still hold as filed.
+
+### Re-baselined after verification (2026-09-28)
+
+Every premise above was re-read against this checkout while filing the `issues/` pages. Three of them moved:
+
+| Item | Was filed as | What the code shows |
+| :--- | :--- | :--- |
+| 1 — port the WHT fix | a copy from a known-good checkout | the source checkout is **not on this machine**; the bug is present here ([[ta-1-wht-inversion-256]]) but the fix must be re-derived, not copied |
+| 2 — TurboQuant GEMM | the fix for the 38.81 % cuBLAS/MAGMA cost | the `magma_sgemmEx_kernel` attribution has **no counterpart in `src/`** (no MAGMA path; the fallback is cuBLAS with F16 compute type), and the turbo types are **absent from `ggml_cuda_device_supports_op`** as well as from the kernel dispatch — so the scheduling question comes before the kernel question ([[gemm-dispatch]]) |
+| 6 — unify the WHTs | a numerical divergence between two implementations | three implementations exist and the two in question agree by construction; `turbo_rotate_forward{,_64}` have no callers ([[tq-4-wht-numerical-mismatch]], [[walsh-hadamard-transform]]) |
+
+The practical consequence for item 2: writing `vec_dot_turbo3_0` is necessary but not obviously sufficient — the allow-list gap has to be closed too, and whether the profitable path is a `mul_mat` kernel or the fused-attention path that already carries native turbo dots (`vec_dot_fattn_vec_KQ_turbo{3,2,4}_0`) is now an open design question rather than a given.
 
 ## Not on the list, but visible in the wiki
 
 Findings that surfaced while filing the sources and are not among the six items — candidates, not commitments:
 
-- **Volta is unbenchmarked** ([[benchmarks]]): there is no V100 number for any profile, and the source build example omits `sm_70`.
+- **Volta is unbenchmarked** ([[benchmarks]]): there is no V100 number for any profile, and the published CUDA 12.4 bundle carries only `sm_86` ([[v100-sxm2]]).
+- **The working tree cannot build as shipped** ([[codebase-map]]): `src/ggml/src/ggml-cuda/template-instances/` is empty while CMake globs it; the 138 files live only in `llama-fast-src.zip`. Nothing else on this list can be measured until that is restored.
+- **Calibration may be broken at its entry point** ([[triattention-calibrate]]): `offset_max` defaults to 0, which may make scores NaN, and the README's calibration example may not run at all. `[INFERENCE]` from code, never executed — cheap to confirm, and it sits upstream of items 1 and 4.
 - **`freq_scale_sq` is provably 1.0** ([[ta-5-freq-scale-dead-code]]) — unlisted; either dead code or a disabled precision feature.
 - **Config validation is absent** ([[ta-7-config-validation]]) — unlisted; the starvation in item 4 would at least be announced to users by it.
 - **Overlap double-counting** ([[ta-6-overlap-double-counting]]) — explicitly deferred by the user, recorded here so it is not rediscovered.
