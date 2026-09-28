@@ -172,4 +172,4 @@ Read the middle and right columns on [[walsh-hadamard-transform]] and [[turboqua
 
 ## See also
 
-[[ternary-bonsai-2-27b]] · [[qwen35-architecture]] · [[prismml-weight-kernels]] · [[quantization]] · [[walsh-hadamard-transform]] · [[turboquant]] · [[triattention]] · [[kv-cache]] · [[gemm-dispatch]] · [[benchmarks]] · [[v100-sxm2]] · [[overview]] · [[source-state-md]] · [[ta-1-wht-inversion-256]] · [[tq-4-wht-numerical-mismatch]]
+[[ternary-bonsai-2-27b]] · [[qwen35-architecture]] · [[prismml-weight-kernels]] · [[quantization]] · [[conversion-and-packing]] · [[walsh-hadamard-transform]] · [[turboquant]] · [[triattention]] · [[kv-cache]] · [[gemm-dispatch]] · [[benchmarks]] · [[v100-sxm2]] · [[overview]] · [[source-state-md]] · [[ta-1-wht-inversion-256]] · [[tq-4-wht-numerical-mismatch]]

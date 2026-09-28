@@ -58,4 +58,27 @@ The Qwen3.5 archs also always write MRoPE `rope.dimension_sections` (interleaved
 - Refuses any input with `general.architecture != "dspark"`; refuses any unmapped `dspark.*` tensor (must be added to `TENSOR_MAP`).
 - Rewrites keys: `general.architecture dspark→dflash`, `dspark.<k> → dflash.<k>`, legacy double prefix `dspark.dspark.<k> → dflash.<k>`, `dspark.dspark.mask_token_id → tokenizer.ggml.mask_token_id`; every legacy `tokenizer.*` stub is dropped and replaced by the **donor (target)** tokenizer's keys (`transform_kv()`).
 - Renames tensors per `TENSOR_MAP`: `confidence_head.{weight,bias} → conf_proj.*`, `fc.weight → fc.weight`, `hidden_norm.weight → enc.output_norm.weight`, `markov_head_a/b → markov_w1/w2`, `log_snr_fc1/2.* → log_snr_fc1/2.*`.
-- **`<arch>.target_l
+- **`<arch>.target_layers += 1` on every element** — the module docstring (`:25-28`) explains the indexing convention: the runtime taps a layer's *input* (`llama_set_embeddings_layer_inp`), so the input of layer `k+1` is the output of layer `k`, which is what these drafters were trained against; both reference pairs show `[1,16,31,46,61] → [2,17,32,47,62]`. The HF-side converter applies the identical `+1` (`DFlashModel.set_gguf_parameters`, `qwen.py:730-731`: `extract_layer_ids = [i + 1 for i in target_layer_ids]`), so the convention is consistent in both directions.
+- Copies tensor **bytes verbatim** (aligned re-offset; contiguous `shutil.copyfileobj` copy of the whole data section, or per-tensor copies under `--drop-shared-tensors`, which drops `token_embd.weight`/`output.weight` — `TENSOR_NOT_REQUIRED` at runtime; a full-vocab draft borrows the target's embedding and head via `ctx_other`, ~11× smaller with a `Q4_0` repack).
+- There are **two in-tree DSpark stories** besides this script: `src/conversion/dspark.py` maps a DSpark checkpoint straight to `arch = DSPARK` (with a `tokenizer.ggml.model = none` + `vocab_size` placeholder trick so batch validation passes without a real vocab, `dspark.py:16-33`), and `qwen.py:922-925` has a `DSparkModel(DFlashModel)` with `arch = DFLASH` for the `Qwen3.6-27B-DSpark` checkpoint. The script above handles the *legacy GGUF* form. See [[qwen3-dflash-draft]] for the runtime side.
+
+### Type ids: what the converter can and cannot emit
+
+- Fork-private tensor types are appended above upstream: `GGML_TYPE_PQ2_0 = 142`, `GGML_TYPE_PTQ1_0 = 143` (Prism-private ternary, group 128), `GGML_TYPE_COUNT = 144` with "slots above upstream types; type_traits is sized to COUNT (144) with 46..141 unused" (`src/ggml/include/ggml.h:437-441`); Python mirrors them (`src/gguf-py/gguf/constants.py:5479-5480`) and knows the block layouts — `QUANT_SIZES`: `PQ2_0 (128, 2+32)`, `PTQ1_0 (128, 2+24+2)` (`constants.py:5675-5676`). A type id known but **no encoder anywhere**: `PQ2_0|PTQ1_0` occurs in `src/gguf-py` only in `constants.py`, and not at all under `src/conversion/`.
+- File-type ids: `GGML_FTYPE_MOSTLY_PQ2_0 = 128`, `MOSTLY_PTQ1_0 = 129` (`ggml.h:485-486`; `constants.py:5537-5538`). **141 is defined by no table in this tree** (both the C enum `ggml.h:456-487` and the Python `LlamaFileType` stop at 129), yet [[ternary-bonsai-2-27b]] records `general.file_type = 141` on the target GGUF. Since every in-tree converter emits `add_file_type(self.ftype)` with `ftype` drawn from `LlamaFileType`, `141` **cannot have been written by this repo's converter** — `[INFERENCE]` it came from the out-of-tree packer's own file-type vocabulary. See *Open questions*.
+
+### Contradiction carried from the draft side
+
+> Contradiction (2026-09-28): the draft GGUF records `general.file_type = 15`, which the runtime table maps to `GGML_FTYPE_MOSTLY_IQ2_XXS` (`ggml.h:471`), while its tensors are actually `Q4_K`/`Q6_K`. The mapping half is verified here; the tensor-type half is a sibling's reading of the draft file, `[UNVERIFIED]` from this repo. No in-tree converter explains the pairing, and `gguf_dspark_to_dflash.py` — the tool that re-exports draft GGUFs — copies tensor types through untouched, so nothing in this pipeline would ever correct it. See [[qwen3-dflash-draft]].
+
+## Open questions
+
+- **`general.file_type = 141` on the target GGUF.** Outside both the C and Python file-type tables (max `129`); the in-repo converter provably cannot write it (`add_file_type(self.ftype)` with `ftype ∈ LlamaFileType`). Is it a stale packer-side id, a deliberate sentinel, or the *actual* marker the runtime keyed on? See [[ternary-bonsai-2-27b]].
+- **The fold convention.** Which side `H` multiplies (left vs right) and where the sign vector applies at pack time cannot be confirmed here; the only verifiable artifact is the runtime contract transcribed by `base.py:635-773` from an out-of-tree `hadamard_packing.json`. `[UNVERIFIED]` — see [[prism-hadamard-weight-fold]].
+- **Who packs `PQ2_0`?** No encoder exists in `src/gguf-py` or `src/conversion`; the tensors must arrive pre-packed from the out-of-tree packer. The in-repo converter can relay them via `raw_dtype` but cannot prove their contents.
+- **Why does `add_hadamard_metadata` whitelist exclude `DFLASH`/`DSPARK`?** A folded *draft* could not be produced in-repo even in principle; whether the runtime's draft head handles the transform is covered on [[qwen35-architecture]].
+- **`PTQ1_0` (143) exists but is used by no artifact in this project** — no file type, no code path, no tensor in the vault's GGUF. Dead id or future path? `[UNVERIFIED]` in both directions.
+
+## See also
+
+[[prism-hadamard-weight-fold]] · [[prismml-weight-kernels]] · [[quantization]] · [[ternary-bonsai-2-27b]] · [[qwen3-dflash-draft]] · [[qwen35-architecture]] · [[speculative-decoding]] · [[codebase-map]]
