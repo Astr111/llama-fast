@@ -191,4 +191,4 @@ There is no AOT compilation step and no token-span caching: rule structure and s
 
 ## See also
 
-[[speculative-decoding]] · [[request-lifecycle]] · [[overview]] · [[kv-cache]] · [[performance-profile]] · [[benchmarks]] · [[qwen35-architecture]] · [[server-layer]]
+[[speculative-decoding]] · [[request-lifecycle]] · [[overview]] · [[kv-cache]] · [[performance-profile]] · [[benchmarks]] · [[qwen35-architecture]] · [[server-layer]] · [[grammar-constraints]]

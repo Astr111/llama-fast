@@ -2,9 +2,9 @@
 title: Qwen3.8-27B-DFlash2 draft model
 type: entity
 status: current
-updated: 2026-09-28
+updated: 2026-09-29
 sources: [state.md, README.md]
-verified: ["/hdd2/lm-studio-models/z-lab/Qwen3.8-27B-DFlash2-GGUF/Qwen3.8-27B-DFlash2-Q4_K_M.gguf", src/common/speculative.cpp, src/common/arg.cpp, src/src/models/dflash.cpp, src/src/llama-arch.cpp, src/src/llama-ext.h, src/gguf-py/gguf/scripts/gguf_dspark_to_dflash.py, scripts/start_server_turbo.sh, scripts/start_server_baseline.sh, scripts/run_cli.sh]
+verified: ["/hdd2/lm-studio-models/z-lab/Qwen3.8-27B-DFlash2-GGUF/Qwen3.8-27B-DFlash2-Q4_K_M.gguf", src/common/speculative.cpp, src/common/arg.cpp, src/src/models/dflash.cpp, src/src/models/dspark.cpp, src/src/models.h, src/src/llama-arch.cpp, src/src/llama-arch.h, src/src/llama-model.cpp, src/src/llama-model.h, src/src/llama-hparams.h, src/src/llama-ext.h, src/src/llama-context.cpp, src/src/llama-context.h, src/src/llama-graph.cpp, src/src/llama-graph.h, src/common/common.h, src/common/download.cpp, src/common/preset.cpp, src/ggml/include/ggml.h, src/gguf-py/gguf/scripts/gguf_dspark_to_dflash.py, src/gguf-py/gguf/constants.py, src/gguf-py/gguf/tensor_mapping.py, src/gguf-py/pyproject.toml, src/conversion/qwen.py, src/conversion/deepseek.py, src/conversion/muse_glimmer.py, src/README.md, src/docs/speculative.md, scripts/start_server_turbo.sh, scripts/start_server_baseline.sh, scripts/run_cli.sh]
 tags: [speculative-decoding, draft-model, dflash, model]
 ---
 
@@ -113,6 +113,64 @@ This model is **not** part of the TA/TQ defect inventories — it appears in [[s
 - **The `target_layers` contract is one-directional.** The draft asserts only that it has *some* target layers (`speculative.cpp:1693`); the EAGLE3 path in the same file additionally range-checks each id against the target's layer count (`:1248-1253`). Whether the DFlash path validates `[6, 20, 34, 48, 62]` against a given target model's 64 blocks was not established here — loading this draft against a different target is therefore unverified, not proven safe.
 - **`block_size` mismatch between code and metadata.** The code fallback is 16 (`speculative.cpp:1713`) and this file says 8. Any deployment note or benchmark recorded with block size 16 is not this model's configuration.
 - The draft's own KV cache (`key_length = 128`, 8 KV heads, 5 blocks) is never discussed in the sources; whether it is affected by the TurboQuant type dispatch of [[tq-1-missing-gemm-kernels]] depends on which `-ctk`/`-ctv` the draft context is given — unverified, since no in-repo script configures it.
+
+## The draft architecture: `models/dspark.cpp`
+
+**This file is the architecture the drafter belongs to — but not the loader this page's GGUF goes through.** `src/src/models/dspark.cpp` (573 lines) implements the arch id `dspark`: registry `src/src/llama-arch.cpp:43` (`{ LLM_ARCH_DSPARK, "dspark" }`, enum at `llama-arch.h:48`) → `src/src/llama-model.cpp:338-339` (`case LLM_ARCH_DSPARK: return new llama_model_dspark(params);`, class declared at `src/src/models.h:595`). This page's GGUF declares `general.architecture = dflash`, which is a *different* enum: `llama-arch.cpp:143` (`{ LLM_ARCH_DFLASH, "dflash" }`) → `llama-model.cpp:328-329` → `llama_model_dflash` → `src/src/models/dflash.cpp:25`. **Verdict: `dflash` is the arch this fork loads for the project's drafter; `models/dspark.cpp` is a sibling on a legacy arch id that this file never enters.** Both ids are live, registered code — only the arch string in the GGUF decides which one runs.
+
+### The competing conversion entry points, closed
+
+| Entry point | Emits | Evidence |
+| :--- | :--- | :--- |
+| `qwen.py` `DFlashModel` (the `qwen35`-derived drafter family) | arch `DFLASH` | `src/conversion/qwen.py:664-665` |
+| `qwen.py` DFly, and DSpark ("DFlash + a semi-autoregressive Markov head") | arch `DFLASH` | `src/conversion/qwen.py:795`, `:925` |
+| `deepseek.py` `DeepseekV4DSparkModel` | arch `DFLASH` | `src/conversion/deepseek.py:922-923` |
+| `muse_glimmer.py` `MuseGlimmerAssistantModel` | arch `DFLASH` | `src/conversion/muse_glimmer.py:138` |
+| `gguf_dspark_to_dflash.py` (console script `gguf-dspark-to-dflash`, `src/gguf-py/pyproject.toml:27`) | `dspark` → `dflash` | docstring `:1-14`; refuses non-`dspark` input at `:178-179` |
+
+No current converter emits `general.architecture = dspark`. The arch-`dspark` id exists only to read GGUFs written by older releases, and `src/README.md:14` says so outright: *"Drafters published for older model releases need a one-time conversion with `gguf-dspark-to-dflash` … newer releases ship ready-to-use drafters."* So of the three entry points that looked like rivals in [[conversion-and-packing]], two are the same thing (current converters, arch `dflash`) and the third is a migration tool for a deprecated arch string.
+
+The runtime agrees with the loader: for `--spec-type draft-dspark`, the impl is chosen by re-reading the arch string — `if (std::string(arch) == "dspark")` → `common_speculative_impl_draft_dspark` (the `models/dspark.cpp` path), otherwise the DFlash impl is constructed *with* the DSpark type (`src/common/speculative.cpp:3348-3359`). Inside arch `dflash`, the Markov head is the lineage marker (`llama-ext.h:130-132`; `speculative.cpp:1695-1706`; auto-detected from the tensor `markov_w1.weight` at `:3084-3087`).
+
+### What a DSpark drafter computes
+
+- **Its own layers.** The trunk is the drafter's own `n_layer` dense Qwen3-style stack: `for (int il = 0; il < n_layer; ++il)` (`dspark.cpp:334`), attn RMSNorm + `build_qkv` + q/k norm + RoPE + `build_attn` over a **real persistent KV cache** (`:400-410`, with `llama_set_causal_attn(ctx_dft, false)` at `speculative.cpp:420` making the mask fully open), then FFN SiLU. RoPE family is pinned NEOX (`llama-model.cpp:3250-3251`). The target's hidden states never pass through a layer's `attn_norm`/FFN — they are projected once and re-projected per layer as attention K/V.
+- **Plus taps into the target's hidden states**, but only as context K/V. The staged tap window (`dspark_ctx_feat`, width `n_embd_cap = n_dspark_target_layers * n_embd`, `dspark.cpp:178,231`) goes through `dspark_fc` (Linear) then `dspark_hidden_norm` (RMSNorm) **once per call** (`:241-244`); that tensor is concatenated with each layer's normed draft residual and passed through that layer's own q/k/v projection in a single `build_qkv` (`:351-354`). The comment at `:340-346` justifies it: `nn.Linear` has no cross-row terms, so `k_proj(concat(A,B)) == concat(k_proj(A), k_proj(B))`.
+- **Tensors existing solely for the taps: exactly two** — `dspark.fc` `{n_capture*n_embd, n_embd}` and `dspark.hidden_norm` `{n_embd}` (`dspark.cpp:99-100`; GGUF names at `llama-arch.cpp:686-687`, renamed by the converter to `fc.weight` / `enc.output_norm.weight`, `gguf_dspark_to_dflash.py:19-20`). The layer ids themselves cost no tensors: the *count* is baked into `fc`'s shape, the ids are metadata only.
+- **The other extras are head/conditioning, not taps:** Markov head `{markov_rank, n_vocab}` ×2 (`:118-121`, weights returned as host floats for a host-side resample, `llama-ext.h:213-225`), `confidence_head` `{n_embd (+rank), 1}` + bias (`:125-128`), `mode_embedding` bias (`:131-132`), hidden-correction `corr_gate`/`corr_up` `{2*n_embd, width}` + `corr_down` `{width, n_embd}` + two norms (`:110-112`), GIDD log-SNR `fc1 {128, n_embd}` / `fc2 {n_embd, n_embd}` (`:145-148`).
+- **`h_nextn` is a first-class output of this graph** (`res->t_h_nextn = cur`, `:417-418`) — the pre-final-norm trunk state. That is the hook DFlash2 packs its selector lattice into on this page's file, and the hook the DSpark path reads a confidence head from.
+
+The tap width here is the same arithmetic this page derived from the shipped file: `n_capture × n_embd = 5 × 5120 = 25600`, the first dimension of `fc.weight` `(25600, 5120)` (`dspark.cpp:63,99` vs the GGUF read above). **`fc.weight` in a DFlash-format file *is* `dspark.fc.weight`** — the converter renamed it; the architecture is the same.
+
+### What `target_layers` selects
+
+| Aspect | Key / symbol | Under `dflash` (this file) | Under legacy `dspark` |
+| :--- | :--- | :--- | :--- |
+| metadata key | `llama-arch.cpp:355` / `:222` | `dflash.target_layers` | `dspark.dspark.target_layers` (the "double prefix") |
+| ids → which layers captured | `speculative.cpp:1785-1786`, `llama-context.cpp:1323-1328` | `llama_set_embeddings_layer_inp(ctx_tgt, id, true)` | staged through `llama_set_dspark_ctx` |
+| count → projection width | `dspark.cpp:62`, `llama-model.cpp:3438` | `n_embd_inp_enc_impl = n × n_embd` (`dflash.cpp:29`) | `n_capture`, reported as `llama_dspark_meta.n_capture` |
+
+The ids index the **target's** layer *inputs*, not this drafter's layers: `llama_set_embeddings_layer_inp` flags "the input embeddings of a specific layer" (`llama-ext.h:111-112`), and the context sizes its flag array `n_layer() + 1` precisely so `lid == n_layer()` means the last layer's output — "input of the head" (`llama-context.cpp:206-208`).
+
+This page's reading of the converter comment holds and generalizes: the **+1 shift is applied by the current converters too** (`qwen.py:727-730`, `muse_glimmer.py:171-173`), with the same stated justification — *"`dflash.target_layers[k]` refers to the inputs going into the ith layer, which come from the (i-1)th layer's output. The transformers configuration refers to the outputs being recorded."* So the stored `[6, 20, 34, 48, 62]` are input-of indices, and the source checkpoint's recorded-output indices are `[5, 19, 33, 47, 61]`. [INFERENCE]
+
+The trunk's tensor set is the plain dense Qwen3-style block — the same shape family as [[qwen35-architecture]] — but none of the target's variant machinery carries over: `llama-model.cpp:3248-3251` pins `LLAMA_ROPE_TYPE_NEOX` with the comment that the drafter's RoPE is *"independent of the target's RoPE family"*, so the attention/RoPE differences catalogued in [[qwen35-variants]] do not apply to the draft.
+
+### Can the speculative loop load this draft against the target it ships beside? Yes — the check exists, one call deeper
+
+`speculative.cpp:1693` really does assert only `target_layer_ids_n > 0`. The check this page was looking for is in the *target* context, not in the speculative loop:
+
+```c
+GGML_ASSERT(lid <= model.hparams.n_layer());   // llama-context.cpp:1326
+```
+
+with the flag array sized `n_layer() + 1` (`:207`). `GGML_ASSERT` is unconditional and hard-aborting in this tree (`src/ggml/include/ggml.h:288`), so a mismatch fails at speculative-implementation construction — not at load time, and not silently. For the pair shipped here the ids pass: `[6, 20, 34, 48, 62]` requires `n_layer_tgt ≥ 62`, and the target of [[ternary-bonsai-2-27b]] has 64 blocks. The ids are therefore constrained only as a *bound*; nothing checks that the tapped layers are semantically the right ones for a different target.
+
+The second quantity that must line up is the tap width: the loop computes `n_embd_enc = target_layer_ids_n × n_embd_tgt` (`speculative.cpp:1710`) while the draft's own loader derives its expected encoder input from *its own* metadata (`dflash.cpp:29`); both are `5 × 5120 = 25600` here. [INFERENCE] A different target whose `n_embd` disagreed with the draft's `fc.weight` row count would surface as a shape failure at the first decode, not at load.
+
+**A third DSpark lives under arch `dflash`, and it is not this page's model.** `hyper_connection_count > 0` (read at `dflash.cpp:70`) selects DeepSeek-V4 DSpark *stages*: `graph_dsv4` (`dflash.cpp:352-355`), MLA-style single-K cache with ISWA → `llama_kv_cache_iswa` (`llama-model.cpp:2723-2729`), RoPE `NORM` instead of `NEOX` (`:3236-3237`), and the `is_dsv4` reclassification at `:372-373`. `dsv4_hc_mult` appears nowhere in `dspark.cpp`, so the arch-`dspark` path implements only the vanilla trunk and DSV4 drafters must go through `dflash.cpp` whatever they are called.
+
+> **Correction (2026-09-29).** The open question above — *"Whether the DFlash path validates `[6, 20, 34, 48, 62]` against a given target model's 64 blocks was not established here … loading this draft against a different target is therefore unverified, not proven safe"* — resolves to: **it is checked, as a bound.** `llama-context.cpp:1326` asserts `lid <= n_layer_tgt` for every DFlash tap, so loading this draft against a target with fewer than 63 blocks aborts at spec-impl construction. What stays unverified is the semantic match, and the tap width, which is only implicitly checked (see above). A second correction: the page's "two DFlash lineages with the same arch string" *understates* the count — under `dflash` there are at least three (vanilla/DFlash2, DSpark-with-Markov-head, DeepSeek-V4 DSpark stages), and the separate legacy arch id `dspark` adds a fourth code path, `models/dspark.cpp`, which no current converter produces.
 
 ## See also
 

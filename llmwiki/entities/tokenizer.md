@@ -112,7 +112,7 @@ Gap #10. Four files, and only one of them has logic:
 
 Extents read from `unicode-data.cpp`:
 
-- `unicode_ranges_flags` `:10-2284` — `{codepoint_start, uint16 flags}` runs (~2 040 entries), the tree's only encoding of Unicode general category plus whitespace/case/NFC properties. Consumed **eagerly**: `unicode_cpt_flags_array()` (`unicode.cpp:116-146`) walks the ranges into a `std::vector<unicode_cpt_flags>` of `MAX_CODEPOINTS = 1 114 112` entries on first use (a function-local static behind `unicode_cpt_flags_from_cpt`/`_from_utf8`, `:1147-1160`), then overlays `unicode_set_whitespace`, both case maps, and the NFD targets. `[INFERENCE]` — the vector is ~4 MiB if the flag bitfield packs into 32 bits; the allocation happens on the first tokenization, not at vocab load.
+- `unicode_ranges_flags` `:10-2284` — `{codepoint_start, uint16 flags}` runs (**2 273 entries**, counted — the earlier ~2 040 was an estimate), the tree's only encoding of Unicode general category plus whitespace/case/NFC properties. Consumed **eagerly**: `unicode_cpt_flags_array()` (`unicode.cpp:116-146`) walks the ranges into a `std::vector<unicode_cpt_flags>` of `MAX_CODEPOINTS = 1 114 112` entries on first use (a function-local static behind `unicode_cpt_flags_from_cpt`/`_from_utf8`, `:1147-1160`), then overlays `unicode_set_whitespace`, both case maps, and the NFD targets. **Corrected 2026-09-29:** the flag bitfield is **2 bytes** wide, not 32 bits (`unicode.h:20-45`: twelve `uint16_t … : 1` members written through `*reinterpret_cast<uint16_t*>(this)`), so the vector is `1 114 112 × 2 = 2 228 224 B = 2.125 MiB` exactly — half the previously inferred ~4 MiB. The allocation happens on the first tokenization, not at vocab load.
 - `unicode_set_whitespace` `:2286-2312`; `unicode_map_lowercase` `:2315-3749`; `unicode_map_uppercase` `:3752-5203` (binary-searched by `unicode_tolower`, `unicode.cpp:1172-1182` — there is **no** `unicode_toupper`); `unicode_ranges_nfd` `:5205-7034`.
 
 ### What `unicode.cpp` provides
@@ -189,6 +189,65 @@ Where it is live: a BPE model whose pre-type sets `byte_encode = false` **and** 
 
 **Error propagation.** No exception from this layer reaches [[forward-pass]] or [[server-layer]]: `unicode_cpt_from_utf8`'s `std::invalid_argument` is eaten in `unicode_cpts_from_utf8`, and `unicode_utf8_to_byte`'s `std::out_of_range` is the only one that escapes `unicode.cpp` — caught one frame up inside `llama_decode_text`, and only on the BPE detokenization path. The layer's failure mode is always *wrong text*, never a crash.
 
+## The unicode tables, enumerated
+
+Every number below is a **counted row count, not an estimate**. `src/src/unicode-data.cpp` is one initialiser row per line, so a table body's line span *is* its entry count — verified both ways (span arithmetic and `grep -c '^\s*{'` per range agree on all five). The vault previously carried `~2 040` for the first table and no count at all for the other four. The five row counts sum to 7 009 of the file's 7 034 lines; the remaining 25 are the five declarations, five `};`, five blank lines, two ordering comments (`:2314`, `:3751`), the generator banner (`:1`) and the closing brace (`:7034`).
+
+| Symbol | Lines | Element type / width | Rows | Consumer | What it decides |
+| :--- | :--- | :--- | ---: | :--- | :--- |
+| `unicode_ranges_flags` | `:10-2284` (decl `:10`, rows `:11-2283`, sentinel `{0x110000, 0x0000}`, `};` `:2284`) | `std::pair<uint32_t, uint16_t>` = **8 B** | **2 273** | `unicode_cpt_flags_array()` `unicode.cpp:116-146` (loop `:121-127`) — its **only** reader | the Unicode **general category** of each codepoint *run*: `(start, flags)` with `last = next_start−1` (`:10`), one of NUMBER / LETTER / SEPARATOR / ACCENT_MARK / PUNCTUATION / SYMBOL / CONTROL / UNDEFINED. The endpoints are asserted, not assumed: first row must start at 0, last at `MAX_CODEPOINTS` (`unicode.cpp:119-120`) |
+| `unicode_set_whitespace` | `:2286-2312` (rows `:2287-2311`) | `uint32_t` in `std::unordered_set` | **25** | `unicode.cpp:129-131` sets the bit; read by every custom matcher (`unicode.cpp:296-306` gpt2, `:421-436` llama3, `:556-571` qwen2, `:686-701` qwen35, `:893-910` kimi_k2), the collapse loop `:1275-1277`, and `llama-vocab.cpp:1730` | the engine's **entire `\s` class**, 25 codepoints: U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000. The engine's comment at `:1277` records why the set exists at all: *"C++ std::regex `\s` does not match 0x85, Rust and Python regex does"* — the collapse substitutes U+000B for it |
+| `unicode_map_lowercase` | `:2315-3749` (rows `:2316-3748`) | `std::pair<uint32_t, uint32_t>` = **8 B**, ascending (`:2314`) | **1 433** | `unicode.cpp:133-135` (sets `is_lowercase`) **and** `unicode_tolower` `unicode.cpp:1172-1182` (`std::lower_bound`) | codepoint → lowercase codepoint, and (via the overlay) the `is_lowercase` bit. Callers of `unicode_tolower`: `llama-vocab.cpp:844`, `:1733` — the SPM/UGM and WPM normalizers; **not** the qwen35 BPE path |
+| `unicode_map_uppercase` | `:3752-5203` (rows `:3753-5202`) | same | **1 450** | `unicode.cpp:137-139` only | sets `is_uppercase`. **No functional reader anywhere in the tree** — see below. There is no `unicode_toupper` |
+| `unicode_ranges_nfd` | `:5205-7034` (rows `:5206-7033`) | `range_nfd` = 3 × `uint32_t` = **12 B** (`unicode-data.h:8-12`) | **1 828** | `unicode.cpp:141-143` (sets `is_nfd`) **and** `unicode_cpts_normalize_nfd` `unicode.cpp:1117-1128` (`std::upper_bound` on `first`) | `(start, last, nfd)` decomposition ranges: which codepoints have a single-codepoint NFD form and what it is. The normalizer's only caller is the SPM/UGM path `llama-vocab.cpp:821` |
+
+### Unicode version: not pinned in the tree; the data is 15.1
+
+The file's only provenance line is `// generated with scripts/gen-unicode-data.py` (`unicode-data.cpp:1`). Neither the file nor the generator names a version: `src/scripts/gen-unicode-data.py:10` downloads `https://www.unicode.org/Public/UCD/latest/ucd/UnicodeData.txt` — the **moving** `latest` branch — and the NFD column is computed with the **host Python's** `unicodedata.normalize` (`:119`), so two different Unicode sources are mixed and both float. **Regeneration is not reproducible from the tree.**
+
+The shipped data can still be bracketed by probing block starts in `unicode_ranges_flags` (each block adjacent to unassigned space necessarily begins a new range, so a missing start means a missing block). Present: `0x000870` (Arabic Extended-B, 14.0), `0x011F00` (Kawi, 15.0), `0x01E4D0` (Nag Mundari, 15.0), `0x02EBF0` (CJK Extension I, **15.1**). Absent: `0x010D40` (Garay, 16.0), `0x01E5D0` (Ol Onal, 16.0), `0x01CC00` (Symbols for Legacy Computing Supplement, 16.0) — the range covering Garay is still `{0x010D3A, 0x0001}` UNDEFINED at `:1495`, spanning past it. Since 15.1 (2023-09) and 16.0 (2024-09) are the only releases in that window, **the category/whitespace tables are Unicode 15.1**. `[INFERENCE]` — the version is derived from those seven probes, not from any comment; the case and NFD tables were generated by the same script run but from Python's own tables, so a point-release skew between the columns cannot be excluded.
+
+Related regression hazard: the in-tree generator emits `std::vector<…>` / `std::unordered_map<…>` for four of the five tables (`scripts/gen-unicode-data.py:173`, `:183`, `:188`, `:193`), while the committed file declares all four as `std::initializer_list` (`unicode-data.cpp:10`, `:2315`, `:3752`, `:5205`) and the header matches the file (`unicode-data.h:16-20`). Only `unicode_set_whitespace` agrees. Re-running the script on a checkout therefore does not reproduce the committed declarations (the maps are also order-sensitive for `std::lower_bound`, which an `unordered_map` is not) — the committed tables are a hand-tuned or fork-local variant of the generator's output, not its current product.
+
+### Memory, as arithmetic
+
+Widths: `std::pair<uint32_t, uint16_t>` is 8 B (4 + 2 + 2 padding); `range_nfd` is 12 B; `unicode_cpt_flags` is 2 B (`unicode.h:20-45`, twelve `uint16_t __ : 1` bitfields, written wholesale through `*reinterpret_cast<uint16_t*>(this)`).
+
+| Item | Arithmetic | Bytes |
+| :--- | :--- | ---: |
+| `unicode_ranges_flags` | 2 273 × 8 | 18 184 |
+| `unicode_map_lowercase` | 1 433 × 8 | 11 464 |
+| `unicode_map_uppercase` | 1 450 × 8 | 11 600 |
+| `unicode_ranges_nfd` | 1 828 × 12 | 21 936 |
+| `unicode_set_whitespace` | 25 nodes ≈ 25 × 16 + 29 buckets × 8 | ≈ 632 `[INFERENCE]` |
+| **static tables (read-only, file-backed, shared)** | 63 184 + 632 | **63 816 B = 62.3 KiB** |
+| **runtime flags vector** | 1 114 112 × 2 | **2 228 224 B = 2.125 MiB** |
+| **total resident after first tokenization** | | **≈ 2.19 MiB** |
+
+So the earlier `[INFERENCE]` ("~4 MiB if the flag bitfield packs into 32 bits") was **wrong by a factor of 2 and its premise was wrong**: there is no 32-bit packing, `sizeof(unicode_cpt_flags) == 2`, and the vector is exactly `2 228 224 B` — `MAX_CODEPOINTS` (0x110000) times the bitfield width, independent of prompt length and of vocabulary size. It is allocated lazily behind the function-local static at `unicode.cpp:1148-1149`, so the first tokenization anywhere in the process pays it: the fill loop copies 2 273 ranges over 1 114 112 slots (`:121-127`), i.e. ~1.11 M stores, then overlays whitespace, both case maps and 1 828 NFD targets. Before that first call the layer costs only the 62.3 KiB of `.rodata`. Nothing anywhere frees or bounds it — it lives as long as the process, alongside the compute buffers of [[forward-pass]].
+
+### Two refutations
+
+**`unicode_cpt_is_han` has callers — seven of them.** The earlier `[UNVERIFIED]` ("no caller outside its own declaration was found") is refuted: `unicode.cp:1184-1214` is called at `unicode.cpp:815`, `:816`, `:827`, `:829`, `:841`, `:847`, `:851`, all inside `unicode_regex_split_custom_kimi_k2` (`:777-947`). That matcher is selected only by `regex_expr == "\\p{Han}+"` (`unicode.cpp:1064-1066`), which is registered only for `LLAMA_VOCAB_PRE_TYPE_KIMI_K2` (`llama-vocab.cpp:453-457`; `tokenizer_pre == "kimi-k2"` → `:2358-2359`). It reads **no table at all** — nine hand-written `if (cpt >= a && cpt <= b)` ranges (`:1186-1211`, CJK Extensions A–F plus two compatibility-ideograph blocks). Verdict: live code, zero data cost, **unreachable for this model** (`tokenizer.ggml.pre = qwen35` → `PRE_TYPE_QWEN35`, `llama-vocab.cpp:382-388`, `:2236-2238`), which is the sense in which the earlier suspicion survives.
+
+**The target's tokenize path *does* read the flag tables.** The section above ("Which parts the tokenizer path depends on") concludes "qwen35 is a byte-level pre-split … so the codepoint *category* tables never run for it … its cost is the regex matcher plus the two byte maps". That is **false**, and it understates the target's memory by 2.125 MiB:
+
+1. `unicode_regex_split` sets `need_collapse = true` when **any** expression contains a `\p{…}` category (`unicode.cpp:1246-1256`, table `k_ucat_enum` `:1218-1230`). QWEN35's expression contains `\p{L}\p{M}\p{N}` (`llama-vocab.cpp:386`), so the collapse loop runs and calls `unicode_cpt_flags_from_cpt` for **every codepoint ≥ 128** in the prompt (`unicode.cpp:1275`) — that call is what builds the 2.125 MiB vector.
+2. The QWEN35 custom matcher reads flags itself: `_get_flags` is defined at `unicode.cpp:628-630` and used at `:686`, `:688`, `:701` (letter/combining-mark/whitespace decisions in the digit-and-letter rules). Note `unicode_regex_split` passes the **original** `text` to `unicode_regex_split_custom` (`:1292`), not the collapsed copy, so the matcher re-decodes the original codepoints and looks each one up.
+3. `byte_encode = true` means only that the *output* words are byte-encoded at the very end (`unicode.cpp:1403-1405` → `unicode_byte_encoding_process` `:196-212`). It does not make the split category-blind; the split happens before it.
+
+What remains true from that section: for pure-ASCII prompts the collapse loop skips the lookup (`if (cpts[i] < 128) continue;`), and non-ASCII is only one of the paths that touch the flags. But the flag table is on the qwen35 path, so "never run for it" must be read as refuted.
+
+### Who shares these tables — BPE yes; chat and grammar no
+
+The five tables have exactly one entry point, `unicode_regex_split` (`llama-vocab.cpp:605` for the BPE session), and no other file in the tree includes `unicode.h` for them.
+
+- **Byte-level BPE: yes, all five indirectly.** The flag table on every non-ASCII codepoint of every prompt (above); whitespace through `is_whitespace`; NFD and lowercase only for the SPM/UGM/WPM pre-types (`llama-vocab.cpp:821`, `:844`), not for `qwen35`.
+- **Grammar ([[grammar-constraints]]): no, not one of them.** `src/src/llama-grammar.cpp` contains **zero** occurrences of `unicode` (repo-wide grep over that file); it carries its own private decoder `decode_utf8` (`:18-92`). Its only coupling is one-way and already documented above — candidate strings come from the tokenizer's cached piece, i.e. the *output* of this layer, never its tables.
+- **Chat / templates ([[chat-templates]]): no.** `src/common/chat.cpp` and `src/common/json-schema-to-grammar.cpp` match zero `unicode_*` symbols; the renderer moves raw bytes and hands them to the tokenizer.
+
+So the tables are the *pre-tokenizer's* private data: one consumer file (`unicode.cpp`), one caller (`llama-vocab.cpp:605`), and two downstream paths (chat, grammar) that consume only text, as [[chat-templates]] and [[grammar-constraints]] describe.
+
 ## See also
 
-[[ternary-bonsai-2-27b]] · [[forward-pass]] · [[sampling]] · [[server-layer]] · [[conversion-and-packing]] · [[qwen35-architecture]] · [[chat-templates]]
+[[ternary-bonsai-2-27b]] · [[forward-pass]] · [[sampling]] · [[server-layer]] · [[conversion-and-packing]] · [[qwen35-architecture]] · [[chat-templates]] · [[grammar-constraints]]
