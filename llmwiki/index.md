@@ -9,6 +9,8 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 
 ## Start here
 
+**`issues.md` (repository root)** — the consolidated defect register: every defect, discrepancy and infrastructure gap in one file, with severity, status, evidence and cost to fix. It links back into this vault for detail. Read it first if you want a work queue rather than a reference.
+
 | Page | What it answers |
 | :--- | :--- |
 | [[overview]] | What this project is, where it is stuck, and what the evidence actually supports |
