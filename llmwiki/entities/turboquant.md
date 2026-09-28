@@ -175,6 +175,6 @@ Turbo types appear in **no** matmul fast path. `grep -c TURBO` returns 0 for `mm
 
 ## See also
 
-[[overview]] · [[v100-sxm2]] · [[ternary-bonsai-2-27b]] · [[kv-cache]] · [[quantization]] · [[walsh-hadamard-transform]] · [[innerq]] · [[triattention]] · [[gemm-dispatch]] · [[kv-eviction]] · [[performance-profile]] · [[codebase-map]] · [[roadmap]] · [[upstream-lineage]] · [[benchmarks]] · [[prismml-weight-kernels]] · [[cuda-graphs]] · [[rotation-data]]
+[[overview]] · [[v100-sxm2]] · [[cpu-path]] · [[ternary-bonsai-2-27b]] · [[kv-cache]] · [[quantization]] · [[walsh-hadamard-transform]] · [[innerq]] · [[triattention]] · [[gemm-dispatch]] · [[kv-eviction]] · [[performance-profile]] · [[codebase-map]] · [[roadmap]] · [[upstream-lineage]] · [[benchmarks]] · [[prismml-weight-kernels]] · [[cuda-graphs]] · [[rotation-data]]
 [[source-readme]] · [[source-state-md]]
 [[tq-1-missing-gemm-kernels]] · [[tq-4-wht-numerical-mismatch]] · [[tq-5-tail-elements]] · [[tq-2-innerq-host-state]] · [[tq-3-innerq-multigpu]] · [[tq-6-innerq-race]] · [[tq-7-innerq-max-channels]]
