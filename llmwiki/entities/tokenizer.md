@@ -99,4 +99,4 @@ The naive implementation this guards against: emitting each sampled token's piec
 
 ## See also
 
-[[ternary-bonsai-2-27b]] · [[forward-pass]] · [[sampling]] · [[server-layer]] · [[conversion-and-packing]] · [[qwen35-architecture]]
+[[ternary-bonsai-2-27b]] · [[forward-pass]] · [[sampling]] · [[server-layer]] · [[conversion-and-packing]] · [[qwen35-architecture]] · [[chat-templates]]
