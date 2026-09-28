@@ -3,7 +3,7 @@ title: Qwen3.5 architecture (qwen35)
 type: entity
 status: current
 updated: 2026-09-28
-sources: [state.md, README.md]
+sources: [state.md, README.md, TRIATTENTION.md]
 verified: ["/home/ms/Загрузки/Ternary models/Ternary-Bonsai-2-27B-PQ2_0.gguf", calibration/bonsai-27b.triattention, scripts/start_server_turbo.sh, scripts/run_cli.sh, scripts/start_server_baseline.sh, src/src/models/qwen35.cpp, src/src/models/qwen3next.cpp, src/src/llama-arch.cpp, src/src/llama-arch.h, src/src/llama-model.cpp, src/src/llama-model.h, src/src/llama-hparams.cpp, src/src/llama-hparams.h, src/src/llama-memory-hybrid.cpp, src/src/llama-memory-hybrid.h, src/src/llama-memory-recurrent.cpp, src/src/llama-memory-recurrent.h, src/src/llama-kv-cache.cpp, src/src/llama-kv-cache.h, src/src/llama-graph.cpp, src/src/llama-context.cpp, src/src/llama-triattention.cpp, src/src/llama-triattention.h, src/src/llama-vocab.cpp, src/ggml/include/ggml.h, src/ggml/src/ggml-common.h, src/ggml/src/ggml-cuda/triattention-score.cu, src/tools/triattention-calibrate/triattention-calibrate.cpp]
 tags: [architecture, hybrid, ssm, kv-cache, model]
 ---
