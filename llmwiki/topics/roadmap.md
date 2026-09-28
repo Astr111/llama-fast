@@ -30,7 +30,8 @@ Items 1 and 2 are the current planning focus: they were selected as the first [[
 - Items 1–6 as written by the user: [[source-state-md]] §5, each already cross-referenced to its issue page above.
 - Item 2's mechanism is [[gemm-dispatch]].
 - Item 3 is a three-issue bundle because InnerQ's state problems share one root cause: host/device state living in a header instead of a translation unit or a backend context.
-- Item 1's target fix is described as already existing in an external `Release/` checkout. **That checkout is absent from this machine** — `/home/ms/llama-fast/` has no `Release/` directory, checked 2026-09-28 — so item 1 is a port from an unreachable source, not a routine copy.
+- Item 1's target fix is described as already existing in an external `Release/` checkout. **That checkout was absent from the path state.md named** — `/home/ms/llama-fast/` has no `Release/` directory, checked 2026-09-28 — so item 1 was filed as a port from an unreachable source. **Updated 2026-09-29:** a sibling checkout exists at `/home/ms/llama-fast-dev/Release/src/`, its scoring kernel carries the dynamic `wht_group` fix at lines 224-226, and this repository has no `wht_group` at all. The source is reachable — but that checkout is reported as slated for deletion, so the fix should be captured before it is removed ([[ta-1-wht-inversion-256]] holds the three lines verbatim as a fallback).
+
 - Item 5's payoff, item 6's premise, and item 4's regime all still hold as filed.
 
 ### Re-baselined after verification (2026-09-28)
