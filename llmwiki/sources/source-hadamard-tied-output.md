@@ -32,8 +32,8 @@ A contract page for **sharing one latent token embedding between row lookup and 
 
 ## Provenance
 
-- Raw snapshot: `llmwiki/raw/hadamard-tied-output.md`
+- raw path: `llmwiki/raw/hadamard-tied-output.md`
 - Original: `src/docs/development/hadamard-tied-output.md`
-- sha256 (`llmwiki/raw/hadamard-tied-output.md`): `cba2bd0d37fac99dfa3ed458370f753c32fa5a6680c2f9dfb49dff30842283ba`
+- sha256: `cba2bd0d37fac99dfa3ed458370f753c32fa5a6680c2f9dfb49dff30842283ba`
 - Ingested: 2026-09-28
 - Repo paths whose claims were checked against code: none (prose-only document; every claim above is a restatement of this file). The cross-reference to backend behaviour is checked in [[backend-parity]].

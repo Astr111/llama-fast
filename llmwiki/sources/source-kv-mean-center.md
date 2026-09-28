@@ -37,8 +37,8 @@ tags: [kv-cache, quantization, calibration]
 
 ## Provenance
 
-- Raw snapshot: `llmwiki/raw/kv-mean-center.md`
+- raw path: `llmwiki/raw/kv-mean-center.md`
 - Original: `src/docs/kv-mean-center.md`
-- sha256 (`llmwiki/raw/kv-mean-center.md`): `38e3219b3382dd98928328cc5937f99b674e405e3e084e9f0236f67c6fa3cab9`
+- sha256: `38e3219b3382dd98928328cc5937f99b674e405e3e084e9f0236f67c6fa3cab9`
 - Ingested: 2026-09-28
 - Repo paths whose claims were checked against code (see `verified:`): the CLI flag, the context-param plumbing and `Q4_0` gate, `load_kv_mean_center()`, the `k_cache_in` tag at `src/src/llama-graph.cpp:2958-2962`, the `kv_mean_center.k_rot` write (`src/common/kv-mean-center.cpp:49-50`) and the loader's basis check (`src/src/llama-kv-cache.cpp:1702-1730`), the tool README's calibration-basis rule (`src/tools/kv-mean-center/README.md:60-81`), and `tests/test-kv-mean-center.cpp` (the gate test and the F32-cache softmax-invariance test).
