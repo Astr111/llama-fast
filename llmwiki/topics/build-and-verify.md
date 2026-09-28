@@ -4,7 +4,7 @@ type: topic
 status: current
 updated: 2026-09-28
 sources: [README.md, state.md]
-verified: [src/CMakeLists.txt, src/ggml/CMakeLists.txt, src/ggml/src/CMakeLists.txt, src/ggml/src/ggml-cuda/CMakeLists.txt, src/tools/CMakeLists.txt, src/tools/triattention-calibrate/CMakeLists.txt, src/tests/CMakeLists.txt, src/tests/test-backend-ops.cpp, src/CMakePresets.json]
+verified: [src/CMakeLists.txt, src/ggml/CMakeLists.txt, src/ggml/src/CMakeLists.txt, src/ggml/src/ggml-cuda/CMakeLists.txt, src/tools/CMakeLists.txt, src/tools/triattention-calibrate/CMakeLists.txt, src/tests/CMakeLists.txt, src/tests/test-backend-ops.cpp, src/CMakePresets.json, src/build-x64-linux-gcc-debug/CMakeCache.txt, llama-fast-src.zip]
 tags: [build, cuda, testing, verification]
 ---
 
@@ -12,7 +12,7 @@ tags: [build, cuda, testing, verification]
 
 ## Bottom line
 
-The build surface is **stock llama.cpp plus one fork tool**: `src/CMakeLists.txt` is `project("llama.cpp")` version `0.2.0-dev`, which adds `ggml` (version 0.21.0) and then `src`, `common`, `tests`, `tools`. There is no fork-specific build system, no CUDA preset, and no CUDA target that a plain `cmake -B build` produces — `GGML_CUDA` is `OFF` by default. The only documented CUDA recipe is the one in README (`cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=...`), and it is the one path that cannot be expected to work from this working tree: `src/ggml/src/ggml-cuda/CMakeLists.txt` both globs and **explicitly names** files under `template-instances/`, a directory that is empty here ([[codebase-map]]) while `llama-fast-src.zip` carries 138 `.cu` files for it.
+The build surface is **stock llama.cpp plus one fork tool**: `src/CMakeLists.txt` is `project("llama.cpp")` version `0.2.0-dev`, which adds `ggml` (version 0.21.0) and then `src`, `common`, `tests`, `tools`. There is no fork-specific build system, no CUDA preset, and no CUDA target that a plain `cmake -B build` produces — `GGML_CUDA` is `OFF` by default. The only documented CUDA recipe is the one in README (`cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=...`), and it is the one path that cannot be expected to work from this working tree: `src/ggml/src/ggml-cuda/CMakeLists.txt` both globs and **explicitly names** files under `template-instances/`, a directory that is empty here ([[codebase-map]]) while `llama-fast-src.zip` carries 138 `.cu` files for it. As of 2026-09-28 this machine **cannot run the CUDA path at all** — no `nvcc` and no CUDA toolkit are installed — and the tree's only configure record is a CPU-only Ninja/Debug one with `GGML_CUDA=OFF` (`src/build-x64-linux-gcc-debug/CMakeCache.txt`); see *Can this machine build it today?*.
 
 Nothing in this repository has been **built or run** during the construction of this wiki, and there is **no V100 measurement anywhere in it**. Everything below about how a build fails or what a test covers is read off the CMake files and the test source; none of it is a build result. See *Honest status*.
 
@@ -109,11 +109,78 @@ The figures on this page — 0 files in `template-instances/`, 138 `.cu` files i
 
 ## Open questions
 
-- Does a `GGML_CUDA=ON` configure actually fail on the named `template-instances` entries, or does something earlier (toolkit detection, `native` arch rewriting at `src/ggml/src/ggml-cuda/CMakeLists.txt:94-100`) stop it first? Nothing here has been run.
-- Is `template-instances/` the only missing directory in the working tree's `ggml-cuda/`, or are the top-level `*.cu` sources (the `file(GLOB GGML_SOURCES_CUDA "*.cu")` set) incomplete too? The vault records the empty `template-instances/` and nothing else.
+- Does a `GGML_CUDA=ON` configure actually fail on the named `template-instances` entries, or does something earlier (toolkit detection, `native` arch rewriting at `src/ggml/src/ggml-cuda/CMakeLists.txt:94-100`) stop it first? Nothing here has been run. **Settled for this machine** — see *Can this machine build it today?*: toolkit detection fires first, because there is no `nvcc` here at all.
+- Is `template-instances/` the only missing directory in the working tree's `ggml-cuda/`, or are the top-level `*.cu` sources (the `file(GLOB GGML_SOURCES_CUDA "*.cu")` set) incomplete too? The vault records the empty `template-instances/` and nothing else. **Now measured** (see *Can this machine build it today?*): the `ggml-cuda/` diff against the archive is exactly 142 absent files — 138 `.cu` templates + `generate_cu_files.py` + `vendors/{cuda,hip,musa}.h` — and nothing else, since the top-level `*.cu` set is complete (71 = 71).
 - With `template-instances/` restored, would a `sm_70` build link at all — and do the turbo fattn instantiations even compile for Volta? The instantiation list is arch-independent CMake, and the kernels' own arch guards were not read.
 - Should a turbo-type case exist in `test-backend-ops`? Every other fork-specific mechanism (WHT/Hadamard has cases there; TriAttention, InnerQ, the dspark gates) currently has none, so a kernel regression in the turbo path would only surface end-to-end on hardware nobody has measured.
 - Which artifacts in the tree are actually current — `build/cuda124.zip` is an `sm_86` binary from an Ampere-era build ([[v100-sxm2]]), and the vault's four checkouts ([[source-state-md]] §2) make "the build directory" ambiguous.
+
+## Can this machine build it today?
+
+**Verdict: no CUDA build — not "fails", *impossible*, because there is no CUDA toolkit here; and no build of any kind has been run or completed. Only a CPU-only configure is possible today.** Three things are missing: (a) `nvcc` + headers + `cuobjdump`/`nvdisasm`/`ptxas` (nothing under `/opt/cuda`, no `cuda` package installed); (b) the 142 `ggml-cuda/` files absent from the working tree, of which the 138 `template-instances/*.cu` are the ones CMake names and globs; (c) any evidence of a finished build — `src/build-x64-linux-gcc-debug/` holds configure output (`.` 20:50, `CMakeFiles/`, `DartConfiguration.tcl`, `Testing/`) but no `bin/` and no `*.so`.
+
+### What is on the machine (probed read-only, 2026-09-28)
+
+| Probe | Result |
+| :--- | :--- |
+| `which nvcc` / `nvcc --version` | nothing on `PATH`; `command not found` |
+| `ls -d /opt/cuda` | `No such file or directory` |
+| `ls -d /usr/local/cuda*` | no match |
+| `pacman -Qs cuda` | no CUDA package installed |
+| `ls /usr/bin/cuobjdump` | `No such file or directory` (nor `nvdisasm`, nor `ptxas`) |
+| `ls /dev/nvidia*`, `nvidia-smi` | **present** — `NVIDIA GeForce GTX 1660, compute capability 7.5, driver 615.71.09` |
+
+The driver and a GPU are installed — which is why `nvidia-smi` answers while the compiler does not — so `-DGGML_CUDA=ON` is expected to die at toolkit detection, i.e. *before* it ever reaches the missing `template-instances/` files **[INFERENCE: standard CMake behaviour when no `CMAKE_CUDA_COMPILER` can be found; not run]**. Note *which* GPU: `sm_75`, not the target's `sm_70` V100 ([[v100-sxm2]]). Even with a toolkit installed, a build here would produce SASS for the wrong device, so no V100/TurboQuant question is decidable on this machine.
+
+### What the tree's own configure cache says
+
+`src/build-x64-linux-gcc-debug/CMakeCache.txt` is the only record in the repository of how this tree was actually configured (37 693 B, mtime `2026-09-28 17:45:46 +0600` — CMake does not stamp the cache, so the mtime is the record):
+
+| Fact | Value | Line |
+| :--- | :--- | ---: |
+| Generator | `Ninja` | `:974` |
+| Source dir | `/home/ms/Загрузки/llama-fast/src`, generated by `/usr/bin/cmake` | `:985` |
+| `GGML_CUDA` | **`OFF`** | `:418` |
+| `CMAKE_CUDA_ARCHITECTURES` / `CMAKE_CUDA_COMPILER` | **absent from the whole file** — the CUDA language was never enabled, so no arch string was ever recorded | — |
+| Compilers | `gcc` / `g++`, both `UNINITIALIZED` (found, not set) | `:90`, `:62` |
+| `CMAKE_BUILD_TYPE` | `Debug` | `:57` |
+| CUDA sub-options left at their header defaults | `GGML_CUDA_FA=ON` `:427`, `GGML_CUDA_FA_ALL_QUANTS=OFF` `:430`, `GGML_CUDA_GRAPHS=ON` `:439`, `GGML_CUDA_COMPRESSION_MODE=size` `:421`, `LLAMA_DSPARK_MARKOV_CUDA=OFF` `:740` | — |
+
+**What it proves.** The only configuration this tree has ever had is the shape of `cmake --preset x64-linux-gcc-debug` — Ninja + gcc/g++ + Debug + `binaryDir = src/build-x64-linux-gcc-debug` reproduces that preset's four defining fields (`src/CMakePresets.json`) **[INFERENCE on the preset identity; the four fields match exactly]** — and it is CPU-only: `GGML_CUDA=OFF` means the `ggml-cuda` subdirectory was never added, so the empty `template-instances/` has never even been inside a configure path. Conversely the cache records nothing about CUDA arch, toolkit, or the missing files, because a CPU configure does not touch `ggml-cuda` at all.
+
+### The exact restore path for the empty `template-instances/`
+
+Listed from `llama-fast-src.zip` (every member is `src/`-rooted):
+
+| Listing | Count |
+| :--- | ---: |
+| `unzip -l llama-fast-src.zip \| grep 'ggml-cuda/template-instances/.*\.cu$' \| wc -l` | **138** |
+| same without `\.cu$` (all members under that path) | 139 — the 138 `.cu` plus `generate_cu_files.py` |
+| `… (fattn-tile\|fattn-mma\|mmq\|mmf)*.cu` — the four default globs | 74 |
+| `… fattn-vec*.cu` — globbed only when `GGML_CUDA_FA_ALL_QUANTS=ON` | 64 (= 74 + 64 = 138) |
+| `grep 'template-instances/'` over the whole archive | 185 — the other 46 are `ggml-sycl/template-instances/*.cpp` |
+| working tree `src/ggml/src/ggml-cuda/template-instances/` | **0 files** |
+
+Real member prefix, first and last of the `.cu` set: `src/ggml/src/ggml-cuda/template-instances/fattn-mma-f16-instance-ncols1_1-ncols2_16.cu` … `src/ggml/src/ggml-cuda/template-instances/mmq-instance-ptq1_0.cu`. Because the members are already `src/`-rooted, `-d .` from the repository root lands them exactly where `src/ggml/src/ggml-cuda/CMakeLists.txt:105-116` looks. The exact one line:
+
+```bash
+unzip -n llama-fast-src.zip 'src/ggml/src/ggml-cuda/template-instances/*' -d .
+```
+
+`-n` never overwrites, so the command is idempotent and writes only into that one empty directory (139 members). Nothing was extracted while writing this page — the directory is still 0 files. (This supersedes the placeholder wildcard in *Restoring the template instances* above, which assumed a shallow `*/template-instances/*.cu` path.) Because `file(GLOB …)` and the explicit named list are both configure-time, `cmake` must be **re-run** before any build.
+
+**138 and 142 are both right and count different sets.** 142 is exactly *"archive files under `ggml-cuda/` that are absent from the working tree"* — the 138 `.cu` template instances plus `generate_cu_files.py` plus `vendors/{cuda,hip,musa}.h`. So the hole is not only the kernel templates: `vendors/cuda.h` is included by a CUDA build too. Not missing is the top-level kernel set — `ggml-cuda/*.cu` is 71 files in the tree and 71 in the archive (162 of the 304 `ggml-cuda` archive members are present), so those 142 files are the entire defect, not the visible tip of a more broadly stripped directory.
+
+### First three commands of a real attempt
+
+```bash
+# from the repository root
+unzip -n llama-fast-src.zip 'src/ggml/src/ggml-cuda/template-instances/*' -d .   # 1. the only repair a configure needs
+cmake -S src -B src/build-x64-linux-gcc-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF   # 2. the only configure possible here
+cmake --build src/build-x64-linux-gcc-release -j --target test-backend-ops llama-cli   # 3. build the one kernel test
+```
+
+Steps 2–3 are unrun. The true first command of a *CUDA* attempt is installing a toolkit (`pacman -S cuda`, outside this wiki's read-only remit); even then the arch this box wants is `75`, while the target asks for `70` ([[v100-sxm2]]).
 
 ## See also
 
