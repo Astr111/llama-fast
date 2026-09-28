@@ -107,6 +107,67 @@ Yes for everything the fork actually rotates. The CPU encode path and the `TURBO
 - `turbo3_cpu_wht_group_size` has no setter inside `src/ggml`; unset, group size is inferred from row 128-alignment (`ggml-turbo-quant.c:251-253`) while the GPU path pins 128 via KV padding — a divergence surface for group semantics.
 - The `GGML_HINT_SRC0_IS_HADAMARD` plain-WHT path has no verified CUDA counterpart in this scope.
 
+## The CPU kernel layer: repacking and SIMD
+
+Everything in §1–§5 above sits on a lower layer that reorders weights **before the graph runs**. That layer is not an op and not a codec: it is a *buffer type*.
+
+### 1. What repacking is, when it happens, and what it costs
+
+- `ggml_backend_cpu_repack_buffer_type()` (`src/ggml/src/ggml-cpu/repack.cpp:5463-5569`) defines a buffer type named `"CPU_REPACK"`, registered as an **extra buffer type of the CPU device** (`ggml-cpu.cpp:65-66`) and exported through the device proc-address `ggml_backend_dev_get_extra_bufts` (`ggml-cpu.cpp:660-661`).
+- The model loader consumes it only when `use_extra_bufts` is set: the CPU buft list is built with it first (`llama-model.cpp:1044-1057`, `:1572`), and every weight tensor is placed in the first buffer type that accepts it (`select_weight_buft`, `llama-model-loader.cpp:1065-1071`).
+- The switch is `--repack` / `-nr, --no-repack`, env `LLAMA_ARG_REPACK`; the lambda sets `params.no_extra_bufts = !value` (`src/common/arg.cpp:2426-2433`), the field lives in `common.h:573` (default `false` → repacking **on**) and becomes `mparams.use_extra_bufts = !params.no_extra_bufts` (`common.cpp:1719`). It does **not** change the quantization — it only permutes already-quantized blocks. (Direct `llama_model_params` users get the opposite default: `llama.cpp:452` sets `use_extra_bufts = false`.) Note: the parent's premise that [[runtime-switches]] lists `LLAMA_ARG_REPACK` is **refuted** — that page's `LLAMA_ARG_*` inventory (`entities/runtime-switches.md:39-47`) does not mention it, and no page in the vault did before this one.
+
+**The layout change** is row interleaving: N rows of the same block type are fused into one `xN` super-block — `using block_q4_0x8 = block<4, 8>`, `block_q8_0x16 = block<8, 16>`, etc. (`repack.h:36-51`), with `static_assert` that the struct is exactly N source blocks wide (`repack.h:36-42`). The fork's `PQ2_0` gets one too: `using block_pq2_0x4 = block<2, 4>` = 4 halves + `QK_PQ2_0` bytes (`repack.h:42`, `:51`). Each `repack_*_to_*_N_bl()` copies row-major source blocks into interleaved positions (`repack_q4_0_to_q4_0_8_bl` `repack.cpp:4051`, `repack_pq2_0_to_pq2_0_4_bl` `:4146`), driven by the template table `repack<BLOC_TYPE, INTER_SIZE, NB_COLS>` (`:4528-4633`).
+
+**Motivation** is the paired gemv/gemm kernels, which consume N rows per pass so that one quantized activation and one int→float conversion amortize over the tile — stated outright for Q1_0 at `repack.cpp:427-429`; the kernel specializations are `:4641-4831`, and the variant is a compile-time template instance from the table at `:5227-5276`.
+
+**When: load time, once per tensor — never per graph.** `init_tensor` stores the selected trait in `tensor->extra` (`:5463-5467`); the buffer's `set_tensor` asserts `offset == 0` and `size == ggml_nbytes(tensor)` and calls `tensor_traits_base::repack(tensor, data, size)` (`:5469-5483`), i.e. the GGUF bytes are permuted while they are copied into the buffer. At compute time the buffer type only *vouches* for ops: `extra_buffer_type::supports_op` accepts `GGML_OP_MUL_MAT` (2-D src0) and `MUL_MAT_ID` (3-D src0) when src0 lives in the repack buffer and a trait was selected (`:5511-5559`).
+
+**Memory cost: a second, size-for-size copy — nothing frees the original.** `alloc_buffer` allocates an ordinary CPU buffer of the requested size (`:5463-5569`), `get_alloc_size` is `nullptr` so the default `ggml_nbytes` applies, and the interleaved blocks are size-identical to their sources (`repack.h:36-42`) — so repacking adds **no** bytes, but it does not remove any either: the source bytes stay in the GGUF mapping. For every tensor that lands in `CPU_REPACK`, weight memory is therefore ≈2× (file-backed pages + anonymous host copy), and the buffer is **write-only to the runtime** — `get_tensor` and `cpy_tensor` are `nullptr` (`:5463-5569`) — which is why LoRA attachment must fall back to a normal CPU buffer for tensors in a repacking extra buffer ([[loading-and-batching]]). `[UNVERIFIED]`: whether the loader drops the mmap region for repacked tensors; `llama-model.cpp:1196-1232` shows `use_mmap` interacting with buffer choice but was not read to the end.
+
+### 2. Which types are eligible — and the fork's are (mostly) not
+
+`ggml_repack_get_optimal_repack_type()` (`repack.cpp:5270-5444`) is the entire eligibility rule: type → required CPU feature → row-interleave constraint.
+
+| ggml type | Repacked when | Instance |
+| :--- | :--- | :--- |
+| `Q4_0` | AVX2, or SVE+`matmul_int8` with `sve_cnt == QK8_0`; NEON+`matmul_int8`; NEON+dotprod; RVV 256-bit | `q4_0_8x8_q8_0`, `…_4x8`, `…_4x4` (`:5278-5304`) |
+| `Q4_K` | AVX2 or NEON (`ne[1] % 8 == 0`) | `q4_K_8x8_q8_K`, `…_8x4` (`:5305-5331`) |
+| `Q2_K` | **AVX-512** (or RVV 256-bit) | `q2_K_8x8_q8_K` (`:5332-5348`) |
+| `Q5_K`, `Q6_K` | NEON only — **never on x86** | `q5_K_…`, `q6_K_…` (`:5349-5370`) |
+| `IQ4_NL` | AVX2 / NEON+dotprod / RVV | `iq4_nl_8x8_q8_0`, `…_4x4` (`:5371-5403`) |
+| `MXFP4` | AVX2 / NEON+dotprod | `mxfp4_8x8_q8_0`, `…_4x4` |
+| `Q8_0` | NEON (+`matmul_int8` or dotprod) / RVV only — **not on x86** | `q8_0_4x8_q8_0`, `…_4x4` (`:5404-5425`) |
+| `Q1_0` (id 41) | AVX-512+VNNI, **or AVX2**, or NEON | `q1_0_4x8_q8_0`, `…_4x4` (`:5426-5437`, instances `:5260-5261`) |
+| **`PQ2_0` (id 142)** | **AVX-512 *and* AVX-512 VNNI** and `ne[1] % 4 == 0` — the last branch of the selector | `pq2_0_4x8_q8_0` (instance `:5264`, kernels `:4720`/`:4829`) |
+
+Fork types **absent from every repack table**: `Q2_0` (42), `TURBO3_0` (43), `PTQ1_0` (143). No `repack_*_bl` function, no `tensor_traits` instance and no selector branch mentions them; searching `src/ggml/src/ggml-cpu` for them returns only the type-traits table (`ggml-cpu.c:252-262` for PQ2_0/PTQ1_0, `:440-457` for the turbo types) and the codec/host-quantizer declarations (`quants.h:17-18`). Type ids from `ggml.h:431-439`.
+
+**Verdict, and the caveat this forces on §1–§5.** `--repack` is enabled by default and, on this machine, **does nothing for the target model**:
+
+- the target's *weight* type `PQ2_0` **is** in the table — the parent's expectation that the fork's types are simply absent is **refuted for PQ2_0** — but its branch demands AVX-512 + AVX-512 VNNI; this workstation (`i5-14600KF`; `/proc/cpuinfo` shows `avx avx2 fma f16c` and **no** `avx512f`) fails the test at compile time, `ggml_cpu_has_avx512()` is false, the selector returns `nullptr`, and the weight stays in a plain CPU buffer;
+- the target's *KV* types (`TURBO3_0`, and `Q2_0` as the ternary weight format beside it) have **no branch at all**.
+
+So the correction to this page's opening claim: the CPU path mirrors the GPU **codec** (encode/decode arithmetic, §2), but it does **not** mirror the GPU **kernel layer** — no turbo repack exists, and the one fork type that does have a repack slot is on the wrong side of this host's ISA.
+
+### 3. The SIMD surface — and the sources that are missing from this tree
+
+- **ISA selection is compile-time.** `vec.h` pulls in `simd-mappings.h` (`vec.h:6`) and that header defines `GGML_SIMD` once per architecture by preprocessor alone: ARM SVE (`simd-mappings.h:172-174`), NEON+FP16 arithmetic (`:331-333`), **AVX-512F** (`:446-448`), **AVX** (`:581-583`), POWER9 (`:685-687`), wasm simd128 (`:788-790`), SSE3 (`:900-902`), RISC-V V (`:1278-1282`). Runtime feature probes (`ggml_cpu_has_avx2()`, `ggml_cpu_has_avx512()`) select a *repack variant* (`repack.cpp:5278-5444`) or gate op support — they never widen a kernel at run time.
+- **The build** appends the per-arch sources for x86 (`ggml-cpu/arch/x86/quants.c`, `arch/x86/repack.cpp` — `ggml-cpu/CMakeLists.txt:242-245`) and the ISA flags (`-mavx2`, `-mavx512f`, `-mavx512vnni`, … and `ARCH_DEFINITIONS GGML_AVX2 …`, `:335-363`). This machine's in-tree debug build has `GGML_NATIVE=ON` with `GGML_AVX2:BOOL=OFF`/`GGML_AVX512:BOOL=OFF` (`src/build-x64-linux-gcc-debug/CMakeCache.txt`); under `GGML_NATIVE` the compiler's `-march=native` decides, and an i5-14600KF yields SSE/AVX2-class code with no AVX-512.
+- **The SIMD sources are not in this tree.** `find src/ggml/src/ggml-cpu/arch -type f` returns **0 files**, `git ls-files | grep ggml-cpu/arch` returns only `arch-fallback.h`, and the `arch/` directory mtime is a day later than the rest of `ggml-cpu` (Sep 27 vs Sep 26) — yet `CMakeLists.txt:243-244` lists both x86 files unconditionally, and the x86_64 block of `arch-fallback.h` (`:100-129`) does **not** alias `ggml_gemv_pq2_0_4x8_q8_0_generic` / `ggml_gemm_pq2_0_4x8_q8_0_generic` (those aliases exist only for the all-generic block `:64`/`:83`, ARM `:95`/`:99`, PowerPC `:168`/`:187`), i.e. the tree expects native x86 definitions that are not present. `[INFERENCE]` no x86 SIMD quant/repack kernel can be read in this checkout and a build from this tree as-is cannot compile the sources its own CMake lists. `[UNVERIFIED]` whether the measured build predates the files' disappearance.
+- **What that means for the 94 % host wall time** ([[first-live-measurements]] §CPU, where the host cost is attributed to `quantize_q8_1`/MMQ activation work): the repack layer cannot have contributed for the target's types on this host, so the fork's own CPU arithmetic in that run is the **scalar** codec/`vec_dot` of §3, while the surrounding upstream activation quantization and the Q4_0/Q4_K/IQ4_NL/MXFP4 repack paths are at best **AVX2-class** (`repack.cpp:5278-5403` requires `ggml_cpu_has_avx2()`; the CPU has AVX2/FMA/F16C). Nothing on this host is AVX-512 and nothing here is a SIMD-optimal host path; `[UNVERIFIED]` whether `--repack` was in play during that measurement.
+
+### 4. Relation to the CUDA kernels, per fork type
+
+| Type | CPU repack | CPU arithmetic | CUDA counterpart | Verdict |
+| :--- | :--- | :--- | :--- | :--- |
+| `TURBO2_0`/`TURBO3_0`/`TURBO4_0` | none | `.from_float`/`.vec_dot` slots only (`ggml-cpu.c:440-457`), dequantize-then-scalar-dot (`:3528-3580`), codec in the separate TU `ggml-turbo-quant.c` | `set-rows.cu`, `dequantize.cuh`, fused FA KQ (`fattn-common.cuh`) — §1 | **Reference codec + reachable fallback arithmetic**, never a kernel-layer mirror |
+| `PQ2_0` (142) | **yes** — `repack_pq2_0_to_pq2_0_4_bl` (`repack.cpp:4146`), instance `:5264`, gemv/gemm `_4x8_q8_0` (`:4720`, `:4829`; declared `repack.h:174`, `:193`) | plain dot `ggml_vec_dot_pq2_0_q8_0` (`ggml-cpu.c:1229`, inside the Q8_K-eligibility helper `:1207-1217`), generic at `quants.c:235` | MMQ/`mmq-hopper-q1.cu` units, whose `repack_q2_dense` is a **different** repack — in-kernel dense bit-word packing, not a buffer type ([[prismml-weight-kernels]], [[quantized-kernel-units]]) | The only fork type with a CPU repack slot, and it is **unreachable on this host** (AVX-512 gate). Native x86 SIMD for its 4x8 kernels is implied by the missing fallback alias but its ISA is `[UNVERIFIED]` |
+| `PTQ1_0` (143) | none | `quantize_row_ptq1_0` (`quants.c:37-39`), one generic dot (`quants.c:285`) | PrismML ternary units ([[prismml-weight-kernels]]) | **Fallback only.** `arch-fallback.h:97-98` says so in as many words: "PTQ1_0 currently has only the generic vec_dot; alias it here until a SIMD version lands" |
+| `Q2_0` (42) | none | `quantize_row_q2_0` (`quants.c:29`) + `ggml_vec_dot_q2_0_q8_0_generic` (`quants.c:185`) | per [[prismml-weight-kernels]] | Scalar **even on x86**: `arch-fallback.h:104` aliases the generic for x86_64. No SIMD in this tree |
+
+Cross-reference: §1 already lists the codec entry points and §3 the scalar `vec_dot`s — this section is the layer *below* them and adds two corrections. First, "the CPU codec is the reference for values" still holds, but the CPU **kernel layer** is not a mirror of the CUDA kernel set, and `--repack` is not a route to making it one. Second, one stale comment worth flagging: the PQ2_0 instance is introduced as `// instance for Q2_0` (`repack.cpp:5263`) while the type is `block_pq2_0` / id 142 — the same class of naming noise as the two stale CPU-codec comments in §2.
+
 ## See also
 
 [[quantization]] · [[turboquant]] · [[turbo-wht]] · [[walsh-hadamard-transform]] · [[ta-3-cpu-fallback-transfers]] · [[backend-parity]] · [[tq-1-missing-gemm-kernels]] · [[triattention]] · [[ta-1-wht-inversion-256]]
