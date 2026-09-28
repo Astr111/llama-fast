@@ -16,6 +16,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[codebase-map]] | Where anything lives in the tree, and whether it builds |
 | [[performance-profile]] | Where the GPU time goes, and which attributions survive contact with the code |
 | [[request-lifecycle]] | How one request actually flows: batch → graph → kernels → sampling |
+| [[open-questions]] | Every unresolved question in the vault, ranked, with what each would take |
 
 ## Sources (`raw/` snapshots)
 
@@ -76,6 +77,8 @@ TriAttention's inventory, from [[source-state-md]] §3 — verified against the 
 | [[ta-5-freq-scale-dead-code]] | MEDIUM | `freq_scale_sq` computes to 1.0 always; the scaling is disabled |
 | [[ta-6-overlap-double-counting]] | LOW | Latent risk for future patches, not a live defect |
 | [[ta-7-config-validation]] | LOW | No guard rails on incompatible `budget`/prefix/window combinations |
+| [[ta-8-offset-max-zero-nan]] | **CRITICAL (new)** | `offset_max` defaults to 0, so every eviction score is NaN in the shipped scripts |
+| [[ta-9-rope-scope-mismatch]] | **HIGH (new)** | The scorer inverts RoPE over 256 dims with the wrong exponent; the model rotates 64 |
 
 TurboQuant's inventory, from [[source-state-md]] §4 — several premises corrected against the code:
 
@@ -101,6 +104,10 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[release-artifacts]] | What each shipped artifact is, and which one is usable on the target |
 | [[conversion-and-packing]] | How the `PQ2_0` artifact and the Hadamard fold were produced, and where that trail leaves the repo |
 | [[backend-parity]] | What the Vulkan/SYCL/Metal copies of this fork's ops reveal — and the turbo-KV gaps |
+| [[scoring-correctness]] | Three verdicts on how TriAttention's scores are actually computed |
+| [[kv-accounting]] | Whether the published tokens-per-GB figures describe this model's real KV structure |
+| [[server-layer]] | What `llama-server` adds: slots, endpoints, and the statistics behind the numbers |
+| [[open-questions]] | The whole unresolved backlog, classified by what it would take to close |
 | [[triattention-calibrate]] | The offline calibration tool, its profile format, and where doc and code diverge |
 | [[upstream-lineage]] | Three upstreams plus a paper, and what that implies for maintenance |
 | [[roadmap]] | The six recorded action items, plus findings the inventory never listed |
@@ -119,3 +126,5 @@ Recorded on the relevant pages and in `log.md`, never silently reconciled:
 8. **`--triattention-calibrate*` may be inert** and `offset_max=0` may yield NaN scores — `[INFERENCE]` from code, not executed. See [[triattention-calibrate]].
 9. **"max 5 draft tokens" exists nowhere in the tree** — the code default is 3 and the flag was removed. See [[speculative-decoding]].
 10. **`block_size=32` in the sources contradicts `QK_TURBO3 = 128` in the code.** See [[turboquant]].
+11. **This machine cannot build or measure anything the project targets** — no CUDA toolkit, and the attached GPU is a GTX 1660 (`sm_75`), not the V100 (`sm_70`). The tree's only configure record is CPU-only. See [[build-and-verify]], [[open-questions]].
+12. **Two confirmed defects were never in any inventory** — NaN scoring ([[ta-8-offset-max-zero-nan]]) and the RoPE scope mismatch ([[ta-9-rope-scope-mismatch]]). Both fire in the shipped configuration.
