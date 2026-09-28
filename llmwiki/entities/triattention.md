@@ -192,7 +192,7 @@ All three follow from the defaults above and are stated with the code that produ
 | :--- | :--- |
 | `src/src/llama-triattention.h` (393 lines) | `.triattention` format block `:24-51` (`TRIATTENTION_MAGIC` `:50`, `_VERSION` `:51`); `enum triattention_mode` `:59-90`; `triattention_head_stats` `:99`, `_calibration` `:110`, `_config` `:130`, `_state` `:149` through `:189`; public C API `extern "C"` `:195-293`; position hooks `:296+`; `triattention_prune_impl()` `:388` |
 | `src/src/llama-triattention.cpp` (1492 lines) | `triattention_load_calibration` `:107`; `triattention_build_omega` `:309`; `triattention_build_freq_scale_sq` `:320`; `triattention_build_offsets` `:333`; `triattention_precompute_head_derived` `:345`; `triattention_invert_rope` `:382`; `triattention_score_keys` `:434`; `triattention_dequant_kv_head` `:540`; `triattention_init` `:630`; `triattention_should_prune` `:803`; `zscore_normalize` `:829`; `top_k_indices` `:851`; `triattention_init_gpu` `:885`; `triattention_prune` (stub) `:934`; `triattention_prune_impl` `:1077`; `triattention_print_stats` `:1464` |
-| `src/ggml/src/ggml-cuda/triattention-score.cu` (542 lines) | `cooperative_fwht_128` `:47`; `inverse_wht_rotation_128` `:72`; `dequant_head_to_smem` `:107`; `triattention_score_kernel` `:168`; `launch_score_kernel` `:325`; `triattention_gpu_init` `:397`; `triattention_gpu_score_head` `:457`; utility API `:490+` |
+| `src/ggml/src/ggml-cuda/triattention-score.cu` (542 lines) | `cooperative_fwht_128` `:47`; `inverse_wht_rotation_128` `:72`; `dequant_head_to_smem` `:93`; `triattention_score_kernel` `:168`; `launch_score_kernel` `:325`; `triattention_gpu_init` `:397`; `triattention_gpu_score_head` `:457`; utility API `:485+` |
 | `src/ggml/src/ggml-cuda/triattention-score.cuh` (19 lines) | include-only header; the API lives in `ggml-cuda.h` |
 | `src/ggml/include/ggml-cuda.h:44-106` | `triattention_gpu_state`, `triattention_gpu_head_calib`, `triattention_gpu_config` and the seven `triattention_gpu_*` entry points |
 | `src/src/llama-kv-cache.cpp` / `.h` | include `:19`; hooks `:517-528`, `:580`, `:605`, `:791`, `:1302-1307`; trigger `:1351-1375`; `init_triattention` `:2995`; `triattention_try_prune` `:3015`; `has_triattention` `:3071`; state member `llama-kv-cache.h:344` |
@@ -215,7 +215,7 @@ All three follow from the defaults above and are stated with the code that produ
 - [[ta-5-freq-scale-dead-code]] — `freq_scale_sq` is built from `cosf(omega[f] * 0.0f)`, hence identically `1.0f`.
 - [[ta-6-overlap-double-counting]] — prefix and recent-window ranges can overlap in the protection loop; today's `is_prefix || is_recent` counts once, a future `max_protected` must too.
 - [[ta-7-config-validation]] — `triattention_init` validates the calibration file but not `budget`/`prefix_length`/`divide_length`; this is the family the three hazards in §*Verified configuration hazards* belong to (none of them is filed as an issue yet).
-- Three modes, one keep-set: `per-kv-head` and `per-layer-head` both reduce to a single global top-`decode_budget` selection (`:1354-1427`), contrary to both first-party docs. Not filed.
+- Three modes, one keep-set: `per-kv-head` and `per-layer-head` both reduce to a single global top-`decode_budget` selection (`:1347-1422`), contrary to both first-party docs. Not filed.
 - `triattention_prune()` (`:934`) — the public entry declared in the header — is a no-op that returns `0` and has no callers; only `triattention_prune_impl()` does work.
 
 ## See also
