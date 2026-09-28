@@ -132,4 +132,4 @@ The figures `40 → 69 tok/s` and `31.6 → 38.1+ t/s` are a measurement from th
 
 ## See also
 
-[[qwen3-dflash-draft]] · [[ternary-bonsai-2-27b]] · [[performance-profile]] · [[benchmarks]] · [[overview]] · [[kv-cache]] · [[cuda-graphs]] · [[ta-2-budget-starvation]] · [[v100-sxm2]] · [[upstream-lineage]] · [[source-state-md]] · [[source-readme]]
+[[qwen3-dflash-draft]] · [[ternary-bonsai-2-27b]] · [[performance-profile]] · [[benchmarks]] · [[overview]] · [[kv-cache]] · [[sampling]] · [[cuda-graphs]] · [[ta-2-budget-starvation]] · [[v100-sxm2]] · [[upstream-lineage]] · [[source-state-md]] · [[source-readme]]

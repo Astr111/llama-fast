@@ -46,7 +46,8 @@ Notes that matter for the V100 target:
 
 - **Libraries:** `llama` (created under `src/src/`, installed by the top-level file [UNVERIFIED for that subdirectory]), `llama-common`, `ggml-base`, and the enabled backends.
 - **Tool binaries:** `llama-triattention-calibrate` is verified verbatim; `llama-cli` and `llama-server` come from `tools/cli` and `tools/server`, which `src/tools/CMakeLists.txt` only adds behind `LLAMA_BUILD_SERVER` [UNVERIFIED — the subdirectory files were not read, the names are the vault's and the assignment's].
-- **Tests:** every `llama_build*` entry (each executable named after its source file unless `NAME` overrides), all wired into CTest because `src/CMakeLists.txt` does `include(CTest)` and adds the `tests` subdirectory when `LLAMA_BUILD_COMMON AND LLAMA_BUILD_TESTS`.
+- **Tests:** every `llama_build*` entry (each executable named after its source file unless `NAME` overrides), all wired into CTest because `src/CMakeLists.txt` does `include(CTest)` and adds the `tests` subdirectory when `LLAMA_BUILD_COMMON AND LLAMA_BUILD_TESTS`. The fork's PrismML weight-type tests are registered here: `test-ptq1_0-element-map`, `test-ptq1_0-cuda-dot`, `test-pq2-row-shapes` (`:339-341`).
+- **Artifacts it ships:** two prebuilt bundles, `build/cuda13.zip` (modern) and `build/cuda124.zip` (legacy) ([[codebase-map]]); the legacy bundle's `libggml-cuda.so` carries only `sm_86` markers ([[v100-sxm2]]). There is no build target that produces or validates either — they are inputs, not outputs.
 - **Not targets:** there is nothing that builds or validates the V100 numbers, and no target that regenerates `template-instances`.
 
 ## Why a CUDA build from this tree is expected to fail
@@ -85,7 +86,7 @@ What it does (`src/tests/test-backend-ops.cpp`):
 What it does **not** cover for this fork:
 
 - **No turbo type appears anywhere in the file.** A case-insensitive search for `turbo` over `src/tests/test-backend-ops.cpp` returns zero matches, so `turbo2_0`/`turbo3_0`/`turbo4_0` matmul or FA paths are never compared against the CPU reference by this test, and `--show-coverage` cannot report on them beyond whatever generic op they ride on. The vault records **no turbo-type coverage in the tests** — the same conclusion a sibling reached from the page inventory: `test-backend-ops` is mentioned on exactly **one** page, [[prism-hadamard-weight-fold]], and there only for the fork's Hadamard/FWHT op cases (`test_mul_mat_hadamard`, `test_fwht_signed`).
-- No TriAttention/eviction test exists in `src/tests/CMakeLists.txt` (no `triattention` entry), and `src/tools/triattention-calibrate/CMakeLists.txt` only builds the tool. The dspark gates in `src/tests/CMakeLists.txt` (`test-dspark-forward`, `test-dspark-loop`, `test-dspark-real-eval`) are explicit `llama_build`-only entries — the file's comments say they must be run manually, since they need a real GGUF on the command line.
+- The fork's **weight**-side types do have registered tests — `test-ptq1_0-element-map`, `test-ptq1_0-cuda-dot`, `test-pq2-row-shapes` (`src/tests/CMakeLists.txt:339-341`) — but the **KV**-side turbo types have neither a file nor a target: no `turbo` string occurs in `src/tests/CMakeLists.txt` either, no TriAttention/eviction test is registered there, and `src/tools/triattention-calibrate/CMakeLists.txt` only builds the tool. The dspark gates in `src/tests/CMakeLists.txt` (`test-dspark-forward`, `test-dspark-loop`, `test-dspark-real-eval`) are explicit `llama_build`-only entries — the file's comments say they must be run manually, since they need a real GGUF on the command line.
 
 So a kernel change here would be checked by hand, in roughly this order **[INFERENCE — plan, no part of it has been run]**:
 

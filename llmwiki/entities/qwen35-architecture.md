@@ -159,3 +159,5 @@ The 16-of-64 structure is what makes the following apply (or not) — the issue 
 ## See also
 
 [[ternary-bonsai-2-27b]] · [[prism-hadamard-weight-fold]] · [[triattention]] · [[turboquant]] · [[walsh-hadamard-transform]] · [[kv-cache]] · [[kv-eviction]] · [[quantization]] · [[benchmarks]] · [[performance-profile]] · [[v100-sxm2]] · [[speculative-decoding]] · [[qwen3-dflash-draft]] · [[gemm-dispatch]] · [[overview]] · [[source-state-md]] · [[ta-2-budget-starvation]]
+
+[[hybrid-memory]] · [[gated-delta-net]]
