@@ -117,4 +117,4 @@ The figures on this page — 0 files in `template-instances/`, 138 `.cu` files i
 
 ## See also
 
-[[codebase-map]] · [[v100-sxm2]] · [[roadmap]] · [[benchmarks]] · [[turboquant]] · [[gemm-dispatch]] · [[performance-profile]] · [[quantization]] · [[prismml-weight-kernels]] · [[prism-hadamard-weight-fold]]
+[[codebase-map]] · [[release-artifacts]] · [[v100-sxm2]] · [[roadmap]] · [[benchmarks]] · [[turboquant]] · [[gemm-dispatch]] · [[performance-profile]] · [[quantization]] · [[prismml-weight-kernels]] · [[prism-hadamard-weight-fold]]
