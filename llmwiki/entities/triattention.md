@@ -21,6 +21,8 @@ verified:
   - src/ggml/src/ggml-cuda/triattention-score.cuh
   - src/ggml/src/ggml-cuda/turbo-quant.cuh
   - src/ggml/src/ggml-cuda/dequantize.cuh
+  - src/src/models/qwen35.cpp
+  - src/src/models/llama.cpp
   - src/tools/triattention-calibrate/triattention-calibrate.cpp
   - src/tools/triattention-calibrate/CMakeLists.txt
   - calibration/bonsai-27b.triattention
@@ -37,7 +39,7 @@ tags: [triattention, kv-eviction, kv-cache, calibration, cuda]
 
 The system has two halves that run at different times and in different processes:
 
-1. an **offline calibration pass** that records pre-RoPE query statistics per (layer, attention head, frequency band) into a `.triattention` file, and
+1. an **offline calibration pass** that records query statistics per (layer, attention head, frequency band) into a `.triattention` file (the tool calls them *pre-RoPE*; §1 records what the tensor selection actually picks), and
 2. a **runtime pruning pass** that uses those statistics to predict which cached keys a future query distribution would attend to, and evicts the rest.
 
 Pruning is invoked from the **KV cache**, not from the graph: `llama_kv_cache::apply_ubatch()` → `triattention_should_prune()` → `triattention_try_prune()` → `triattention_prune_impl()` (`src/src/llama-kv-cache.cpp:1351-1375`, `:3015-3069`). `src/src/llama-graph.cpp` never references TriAttention — it only knows the TurboQuant rotation op, which is why the two stacks meet only through the cache tensors.

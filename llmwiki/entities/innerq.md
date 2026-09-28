@@ -70,7 +70,9 @@ Three separate mechanisms keep InnerQ a no-op when it is not active, and none of
 
 The tensor's pointer is only non-null for a cache whose K type is a turbo type: it is created in the same `if` that creates the rotation matrices, `if (turbo_rotation == nullptr && (type_k == TURBO3_0 || type_k == TURBO4_0 || type_k == TURBO2_0))` (`llama-kv-cache.cpp:370-379`). A turbo *V* cache with a non-turbo K type therefore gets encoder-side InnerQ gating but no tensor to carry `scale_inv` into the rotation op — the graph passes `nullptr` and the V un-rotation skips the correction (`llama-graph.cpp:2706`, `:2784`). `[INFERENCE]` on the quality consequence; the gating condition is read directly from the two sites.
 
-## Where it lives — two state homes, and which one is live
+## Where it lives
+
+### Two state homes, and which one is live
 
 This is the page's central finding. The tree contains **two** InnerQ state homes, and the older one is still the live one.
 
