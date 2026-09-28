@@ -73,4 +73,5 @@ Two of these are **new, unlisted defects**, and each deserves its own issue page
 
 [[triattention]] · [[triattention-calibrate]] · [[walsh-hadamard-transform]] · [[ta-1-wht-inversion-256]] · [[ta-5-freq-scale-dead-code]] · [[qwen35-architecture]]
 [[roadmap]] · [[ta-7-config-validation]] · [[ta-2-budget-starvation]] · [[kv-eviction]] · [[ternary-bonsai-2-27b]] · [[overview]]
+[[ta-8-offset-max-zero-nan]] · [[ta-9-rope-scope-mismatch]]
 
