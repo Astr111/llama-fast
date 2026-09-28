@@ -57,7 +57,7 @@ One methodological trap, recorded because it produced a wrong number first: a re
 | --: | :--- | ---: | :--- | :--- |
 | 1 | `src/src/llama-sampler.cpp` | 152 KB | the implementation of every sampler stage — [[sampling]] documents only the chain order and the flags | [[sampling]] |
 | 2 | `src/ggml/src/ggml-cuda/rope.cu` | 45 KB | the RoPE kernels; [[ta-9-rope-scope-mismatch]] turns on exactly what dimensions and frequencies they rotate | [[forward-pass]], [[ta-9-rope-scope-mismatch]] |
-| 3 | `src/ggml/src/ggml-cuda/ssm-scan.cu` | 41 KB | the recurrent scan for the 48 SSM blocks; [[gated-delta-net]] read the *op* and not the scan kernel | [[gated-delta-net]] |
+| ~~3~~ | ~~`src/ggml/src/ggml-cuda/ssm-scan.cu`~~ — **REFUTED, not a gap on this project's path** | 41 KB | **Correction (2026-09-29):** this file is *not* the scan behind the target's 48 SSM blocks. `GGML_OP_SSM_SCAN` is emitted only by `models/mamba-base.cpp:123/:262`, `models/plamo2.cpp:385` and a loader probe (`llama-model-loader.cpp:1008-1023`); the target's `build_delta_net` emits `ggml_gated_delta_net` / `_rows` instead (`models/delta-net-base.cpp:430-452`). The file was listed here because its size and name looked like the scan; it is a **different architecture's** scan. [[gated-delta-net]] now carries the real kernel story. |
 | 4 | `src/ggml/src/ggml-cuda/norm.cu` | 37 KB | holds the fused `rms_norm_mul_rope` whose invocation count **doubles** under turbo KV — a measured cost with no documented mechanism ([[first-live-measurements]]) | [[turboquant]] |
 | 5 | `src/src/llama-kv-cache-dsv4.cpp` | 78 KB | a **second KV-cache implementation** in the same tree, never mentioned by any source or page | [[kv-cache]], [[hybrid-memory]] |
 | 6 | `src/common/chat.cpp`, `common/jinja/*` (13 files), `chat-peg-parser.cpp`, `chat-auto-parser-generator.cpp` | ~250 KB | messages → prompt: template application, tool-call parsing, auto-parser generation. [[tokenizer]] stops at text↔ids | new `chat-templates` |
@@ -84,7 +84,7 @@ Naming these prevents them from being re-discovered as "gaps" by the next pass. 
 | :--- | :--- | :--- |
 | Sampler implementation + grammar path (#1, #7) | one agent | a `sampling` page at implementation depth |
 | RoPE + norm kernels (#2, #4) | one agent | the mechanism behind TA-9 and the doubling `rms_norm_mul_rope` count |
-| SSM scan (#3) | one agent | `gated-delta-net` gains its kernel |
+| SSM scan (#3) | ~~one agent~~ **withdrawn** | refuted — `ssm-scan.cu` serves mamba/plamo2, not `qwen35`; `gated-delta-net` gained the real kernel story from the same slice |
 | Prompt assembly (#6) | one agent | a new `chat-templates` entity |
 | Server internals (#8) | one agent | `server-layer` at implementation depth, including MCP |
 | KV cache DSV4 (#5) | one agent | whether it is a fork-of-fork, a sibling design, or dead code |
