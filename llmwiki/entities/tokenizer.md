@@ -4,7 +4,7 @@ type: entity
 status: current
 updated: 2026-09-29
 sources: [state.md, README.md]
-verified: [src/src/llama-vocab.cpp, src/src/unicode.cpp, src/src/unicode-data.cpp, src/src/unicode-data.h, src/src/unicode.h, src/scripts/gen-unicode-data.py, src/src/llama-grammar.cpp, src/common/common.cpp, src/common/chat.cpp, src/common/json-schema-to-grammar.cpp, src/tools/server/server-context.cpp, src/tools/server/server-common.cpp, src/tools/triattention-calibrate/triattention-calibrate.cpp, src/tools/completion/completion.cpp]
+verified: [src/src/llama-vocab.cpp, src/src/unicode.cpp, src/src/unicode-data.cpp, src/src/unicode-data.h, src/src/unicode.h, src/scripts/gen-unicode-data.py, src/common/unicode.cpp, src/common/unicode.h, src/src/llama-grammar.cpp, src/common/common.cpp, src/common/chat.cpp, src/common/json-schema-to-grammar.cpp, src/tools/server/server-context.cpp, src/tools/server/server-common.cpp, src/tools/triattention-calibrate/triattention-calibrate.cpp, src/tools/completion/completion.cpp]
 tags: [tokenizer, bpe, utf8, streaming]
 ---
 
@@ -246,7 +246,9 @@ All five tables are reachable **only** through `src/src/unicode.cpp`, and exactl
 - **Grammar ([[grammar-constraints]]): no, not one of them.** `src/src/llama-grammar.cpp` contains **zero** occurrences of `unicode` (repo-wide grep over that file); it carries its own private decoder `decode_utf8` (`:18-92`). Its only coupling is one-way and already documented above — candidate strings come from the tokenizer's cached piece, i.e. the *output* of this layer, never its tables.
 - **Chat / templates ([[chat-templates]]): no.** `src/common/chat.cpp` and `src/common/json-schema-to-grammar.cpp` match zero `unicode_*` symbols; the renderer moves raw bytes and hands them to the tokenizer.
 
-So the tables are the *pre-tokenizer's* private data: one consumer file (`unicode.cpp`), one caller (`llama-vocab.cpp:605`), and two downstream paths (chat, grammar) that consume only text, as [[chat-templates]] and [[grammar-constraints]] describe.
+**Why they don't: `src/common/` has its own unicode module that shadows this one.** `src/common/unicode.{h,cpp}` (154 lines) is a fork-local duplicate — its own comment says *"implementation adopted from src/unicode.cpp"* (`common/unicode.cpp:9`) — exporting `common_utf8_sequence_length`, `common_utf8_is_complete`, `common_parse_utf8_codepoint`, `common_unicode_cpts_to_utf8`, `common_unicode_cpt_to_utf8` (`common/unicode.h:21-30`). It includes **no** table: no `unicode-data.h`, no `unicode_cpt_flags`, no `MAX_CODEPOINTS` (grep: zero hits). Because the quoted include `"unicode.h"` resolves inside the includer's own directory first, the `common/` files that look like consumers of this layer — `common/trie.cpp:14`, `common/common.cpp:839`, `common/jinja/value.cpp:221`, `common/reasoning-budget.cpp:107`, `common/peg-parser.cpp:479,513,637,669` — are all calling the table-free duplicate, not `src/src/unicode.cpp`. So the tree now carries **four** independent UTF-8 decoders/validators (this one, `src/src/unicode.cpp`, `llama-grammar.cpp`'s `decode_utf8`, the server's `validate_utf8`), of which this one is the only one with no tables and the only one with dead exports: `common_unicode_cpt_to_utf8` and `common_unicode_cpts_to_utf8` have **zero callers** in the tree (the other three functions do have callers, listed above).
+
+So the tables are the *pre-tokenizer's* private data: one consuming file (`unicode.cpp`), one library client (`llama-vocab.cpp`), and two downstream paths (chat, grammar) that consume only text, as [[chat-templates]] and [[grammar-constraints]] describe. Outside the library they are touched only by tests (`test-unicode.cpp:12` calls `unicode_regex_split` itself; `test-gbnf-validator.cpp:22`, `test-grammar-integration.cpp:75-81`, `test-tokenizer-1-bpe.cpp:128`, `test-tokenizer-1-spm.cpp:98` call the codepoint codecs).
 
 ## See also
 
