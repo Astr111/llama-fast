@@ -221,7 +221,7 @@ Directly in `src/ggml/src/ggml-cuda/` the tree has 71 `.cu` + 90 `.cuh` files (`
 
 ## See also
 
-[[overview]] · [[upstream-lineage]] · [[performance-profile]] · [[roadmap]] · [[benchmarks]]
+[[overview]] · [[upstream-lineage]] · [[performance-profile]] · [[roadmap]] · [[benchmarks]] · [[build-and-verify]]
 [[triattention]] · [[turboquant]] · [[innerq]] · [[prismml-weight-kernels]] · [[walsh-hadamard-transform]] · [[cuda-graphs]] · [[speculative-decoding]] · [[ternary-bonsai-2-27b]] · [[qwen3-dflash-draft]] · [[v100-sxm2]]
 [[kv-cache]] · [[kv-eviction]] · [[quantization]] · [[gemm-dispatch]]
 [[tq-1-missing-gemm-kernels]] · [[ta-1-wht-inversion-256]] · [[source-readme]] · [[source-state-md]]
