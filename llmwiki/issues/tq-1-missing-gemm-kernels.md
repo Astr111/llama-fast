@@ -26,7 +26,9 @@ So the mechanism the state.md fix sketch implies is confirmed: **there is no nat
 
 ## Impact
 
-Attention-score arithmetic on a compressed K-cache degenerates into "dequantize everything, then GEMM": a full fp16 copy of the K-cache per call plus a cuBLAS kernel with no `turbo3`-aware tiling. On Volta, which has no INT tensor cores to amortize the loss, this is the dominant cost in state.md's profile (38.81 %, 157 ms). Severity in state.md: **CRITICAL**. See [[performance-profile]] and [[gemm-dispatch]].
+> **Correction (2026-09-28) — the impact claim does not survive.** A full read of the placement path ([[device-placement]]) establishes that **no turbo-typed `MUL_MAT` is built during decode at all**: the turbo KV types force flash attention on (`src/src/llama-context.cpp:3882-3887` → `cparams.flash_attn`, `:320`), so `build_attn_mha` always takes the fused `ggml_flash_attn_ext` branch (`src/src/llama-graph.cpp:2673`, `:2699`) and the quantized blocks are dequantized **inside** `ggml_cuda_flash_attn_ext` (`fattn-vec.cuh:87-98`, `fattn.cu:338-369`), which CUDA accepts via `ggml_cuda_flash_attn_ext_supported` (`fattn.cu:647-649`, type list `:382-402`). `ggml_cuda_mul_mat` therefore **never sees a turbo tensor in the decode path**, and the chain "missing GEMM → cuBLAS/MAGMA fallback → 38.81 %" is not the mechanism. The types' absence from the dispatch tables is a **real fact with an unproven consequence**; the 38.81 % still needs an attribution, and `MAGMA` appears nowhere in this tree.
+
+What remains true: the types are absent from `ggml_cuda_should_use_mmq`/`mmvq` and from `vecdotq.cuh` ([[quantized-kernel-units]]); if a turbo `MUL_MAT` *were* built — e.g. through the non-flash attention branch, which a capability mismatch can select — the CUDA allow-list (`ggml-cuda.cu:5244-5270`) would reject it and `ggml_backend_sched_split_graph` would push it to the **CPU** backend with a graph split and D2H copies (`ggml-backend.cpp:1399-1419`), i.e. the [[ta-3-cpu-fallback-transfers]] mechanism, not an abort. Severity as recorded in state.md: **CRITICAL**; as verified here: **unproven**.
 
 ## Location
 

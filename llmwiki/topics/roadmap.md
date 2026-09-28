@@ -45,6 +45,18 @@ Every premise above was re-read against this checkout while filing the `issues/`
 
 The practical consequence for item 2: writing `vec_dot_turbo3_0` is necessary but not obviously sufficient — the allow-list gap has to be closed too, and whether the profitable path is a `mul_mat` kernel or the fused-attention path that already carries native turbo dots (`vec_dot_fattn_vec_KQ_turbo{3,2,4}_0`) is now an open design question rather than a given.
 
+### Re-baselined again (2026-09-28, after the placement verdict)
+
+Item 2 has since lost its premise altogether. [[device-placement]] establishes that the turbo KV types **force flash attention on**, that the fused kernel dequantises the blocks internally, and that **no turbo-typed `MUL_MAT` is built during decode** — so `ggml_cuda_mul_mat` never sees the compressed cache, and the "missing GEMM → cuBLAS/MAGMA → 38.81 %" story that justified item 2 does not run. What survives is narrower and still worth doing, but it is a different task:
+
+| Item 2, as filed | Item 2, re-scoped |
+| :--- | :--- |
+| Implement `vec_dot_turbo3_0` and register the types so attention stops falling back to cuBLAS | The fallback is not happening in decode. The types' absence from `vecdotq.cuh` and the dispatch tables is a real gap, but it only bites on paths where a turbo `MUL_MAT` is actually constructed — and on those paths the scheduler sends the node to **CPU** ([[ta-3-cpu-fallback-transfers]]), not to cuBLAS |
+| Justified by 38.81 % of GPU time | The 38.81 % is unexplained; its profiler symbol exists nowhere in this tree, and the mechanism it implied is refuted. Re-profiling on the target is a prerequisite, not a follow-up |
+
+Consequence for sequencing: **item 2 should not start before (a) [[ta-8-offset-max-zero-nan]] is fixed and (b) a trustworthy profile exists.** Otherwise it is optimisation aimed by an attribution that has been withdrawn.
+
+
 ## Not on the list, but visible in the wiki
 
 Findings that surfaced while filing the sources and are not among the six items — candidates, not commitments:
