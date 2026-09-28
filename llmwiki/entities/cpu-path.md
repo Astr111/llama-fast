@@ -2,9 +2,25 @@
 title: CPU Path
 type: entity
 status: current
-updated: 2026-09-28
+updated: 2026-09-29
 sources: []
 verified:
+  - src/ggml/src/ggml-cpu/repack.cpp
+  - src/ggml/src/ggml-cpu/repack.h
+  - src/ggml/src/ggml-cpu/arch-fallback.h
+  - src/ggml/src/ggml-cpu/CMakeLists.txt
+  - src/ggml/src/ggml-cpu/ggml-cpu.cpp
+  - src/ggml/src/ggml-cpu/simd-mappings.h
+  - src/ggml/src/ggml-cpu/vec.h
+  - src/ggml/src/ggml-cpu/quants.c
+  - src/ggml/src/ggml-cpu/quants.h
+  - src/common/arg.cpp
+  - src/common/common.h
+  - src/common/common.cpp
+  - src/ggml/include/ggml.h
+  - src/src/llama-model.cpp
+  - src/src/llama-model-loader.cpp
+  - src/build-x64-linux-gcc-debug/CMakeCache.txt
   - src/ggml/src/ggml-turbo-quant.c
   - src/ggml/src/ggml-cpu/ops.cpp
   - src/ggml/src/ggml-quants.c
