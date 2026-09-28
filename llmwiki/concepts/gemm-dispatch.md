@@ -63,4 +63,4 @@ So the accurate summary is: dispatch is a closed allow-list, turbo types are on 
 
 ## See also
 
-[[tq-1-missing-gemm-kernels]] · [[quantization]] · [[turboquant]] · [[kv-cache]] · [[v100-sxm2]] · [[performance-profile]] · [[codebase-map]]
+[[tq-1-missing-gemm-kernels]] · [[quantization]] · [[turboquant]] · [[kv-cache]] · [[v100-sxm2]] · [[performance-profile]] · [[codebase-map]] · [[quantized-kernel-units]]
