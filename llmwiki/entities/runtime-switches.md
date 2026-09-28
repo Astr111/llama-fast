@@ -68,4 +68,4 @@ The real mechanism the name probably refers to is the flag/env surface above: `-
 
 ## See also
 
-[[first-live-measurements]] · [[cuda-graphs]] · [[quantized-kernel-units]] · [[gated-delta-net]] · [[triattention]] · [[speculative-decoding]] · [[turbo-wht]] · [[ta-8-offset-max-zero-nan]] · [[kv-cache]]
+[[first-live-measurements]] · [[auto-fit]] · [[cuda-graphs]] · [[quantized-kernel-units]] · [[gated-delta-net]] · [[triattention]] · [[speculative-decoding]] · [[turbo-wht]] · [[ta-8-offset-max-zero-nan]] · [[kv-cache]]

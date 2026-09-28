@@ -127,4 +127,4 @@ Statistics/time attribution (`n_prompt_tokens_processed`, `slot.print_timings()`
 
 ## See also
 
-[[overview]] · [[codebase-map]] · [[triattention]] · [[turboquant]] · [[hybrid-memory]] · [[kv-cache]] · [[kv-eviction]] · [[sampling]] · [[speculative-decoding]] · [[walsh-hadamard-transform]] · [[qwen35-architecture]] · [[ta-2-budget-starvation]] · [[forward-pass]]
+[[overview]] · [[codebase-map]] · [[triattention]] · [[turboquant]] · [[hybrid-memory]] · [[kv-cache]] · [[kv-eviction]] · [[sampling]] · [[speculative-decoding]] · [[walsh-hadamard-transform]] · [[qwen35-architecture]] · [[ta-2-budget-starvation]] · [[forward-pass]] · [[loading-and-batching]]
