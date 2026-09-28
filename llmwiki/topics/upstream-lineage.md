@@ -37,4 +37,4 @@ Knowing this matters for maintenance: a bug in the TriAttention CUDA scorer is a
 
 ## See also
 
-[[overview]] · [[codebase-map]] · [[prismml-weight-kernels]] · [[triattention]] · [[turboquant]] · [[source-readme]] · [[source-state-md]]
+[[overview]] · [[codebase-map]] · [[prismml-weight-kernels]] · [[triattention]] · [[turboquant]] · [[backend-parity]] · [[source-readme]] · [[source-state-md]]
