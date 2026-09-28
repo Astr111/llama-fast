@@ -63,6 +63,8 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[kv-cache-dsv4]] | The second KV-cache engine in this tree — reachable, and without TriAttention |
 | [[auto-fit]] | The `--fit` placement search, and why it does not explain the measured VRAM probing |
 | [[llama-bench]] | The in-tree benchmark harness: present in the sources, absent from the shipped bundles |
+| [[jinja-engine]] | The template engine itself — its language subset, its value model, and how it fails |
+| [[grammar-constraints]] | Schema → GBNF → the per-token veto: constrained decoding at depth |
 | [[qwen3-dflash-draft]] | The draft model itself |
 
 ## Concepts (ideas)

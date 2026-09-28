@@ -16,6 +16,9 @@ The build surface is **stock llama.cpp plus one fork tool**: `src/CMakeLists.txt
 
 Nothing in this repository has been **built** during the construction of this wiki, and there is **no V100 measurement anywhere in it**. Correction (2026-09-29): it *has* now been **run** — the prebuilt CUDA 13 bundle executes on this machine's GTX 1660 and has served the 4B model, so the engine is measurable even without a toolkit; see [[first-live-measurements]]. Everything below about how a build fails or what a test covers is still read off the CMake files and the test source, not a build result. See *Honest status*.
 
+> **Second missing-source hole (2026-09-29).** `src/ggml/src/ggml-cpu/arch/` — the directory that `src/ggml/src/ggml-cpu/CMakeLists.txt:243-244` lists unconditionally for x86 as `arch/x86/quants.c` and `arch/x86/repack.cpp` — contains **zero files** in this checkout. That is the same shape as the empty `template-instances/` above, and it means the x86 SIMD quant and repack kernels the CPU repack tables point at are not present here at all ([[cpu-path]]). Two independent directories that a build file references and a checkout does not contain changes the reading of the first one: the empty `template-instances/` is not a one-off mistake, it is **how this repository was published** — source subsets are withheld while the build files that require them are not. A CUDA build is blocked by the first hole; a CPU build on x86 is now suspected to be blocked by the second, which is `[INFERENCE]` until someone configures it.
+
+
 ## The two documented build paths
 
 | Path | Shape | What you get |
