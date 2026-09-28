@@ -58,6 +58,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[speculative-decoding]] | The `draft-dflash` block-proposal path |
 | [[sampling]] | The token-selection chain and the parameters a request can reach |
 | [[tokenizer]] | Text ↔ ids: the vocabulary, tokenisation, and the return path to text |
+| [[runtime-switches]] | Every env var and flag the binaries actually read, and the one that does not exist |
 | [[qwen3-dflash-draft]] | The draft model itself |
 
 ## Concepts (ideas)

@@ -130,4 +130,4 @@ The machine is a hybrid part — `perf` reports `cpu_atom` (E-cores) and `cpu_co
 
 ## See also
 
-[[device-placement]] · [[quantized-kernel-units]] · [[turboquant]] · [[cuda-graphs]] · [[benchmarks]] · [[v100-sxm2]] · [[build-and-verify]] · [[release-artifacts]] · [[ternary-bonsai-2-27b]] · [[forward-pass]] · [[open-questions]]
+[[device-placement]] · [[quantized-kernel-units]] · [[turboquant]] · [[cuda-graphs]] · [[benchmarks]] · [[v100-sxm2]] · [[build-and-verify]] · [[release-artifacts]] · [[ternary-bonsai-2-27b]] · [[forward-pass]] · [[open-questions]] · [[runtime-switches]]

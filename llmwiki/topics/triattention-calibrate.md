@@ -149,7 +149,30 @@ The calibration tool's product is one factor in the document's headline "**~40×
 
 **[VERIFIED]** by reading: the name plumbing (`llama-context.cpp:2795` → collector `strstr "Qcur-"`), the qwen35 graph ordering (rope at `qwen35.cpp:367`, name at `:379`, no other `Qcur`), and the scorer's key basis (`llama-triattention.cpp:444-445`, `:480-490`).
 
-**[UNVERIFIED]** — the *magnitude* of the damage: no run exists (this machine has no CUDA toolkit and cannot build — [[build-and-verify]]), so how much the corrupted phase/norm terms change the kept-token set is unmeasured. The run that would settle the basis question outright: one calibration pass with a print of the captured tensor's producer at the callback (expect `GGML_OP_ROPE`); for the impact, regenerate the profile with a pre-RoPE capture hook and diff scores/kept sets on the V100. Also `[UNVERIFIED]` that the generic-builder capture (`llama-graph.cpp:1776`) matches the paper's intended statistic for other architectures — irrelevant to the shipped profile, relevant to any future one.
+**[UNVERIFIED]** — the *magnitude* of the damage: how much the corrupted phase/norm terms change the kept-token set is still unmeasured. *Correction (2026-09-29):* the earlier note here said "no run exists — this machine cannot build"; that turned out to be wrong on the second half. The shipped CUDA 13 bundle runs on this machine's GTX 1660, and a calibration pass has now been executed (see *Live run* below), so the tool is no longer unexercised — but the *basis* question still needs a print of the captured tensor's producer (expect `GGML_OP_ROPE`), and the impact still needs a V100 run. Also `[UNVERIFIED]` that the generic-builder capture (`llama-graph.cpp:1776`) matches the paper's intended statistic for other architectures — irrelevant to the shipped profile, relevant to any future one.
+
+## Live run (2026-09-29)
+
+The calibrator was run for the first time against real hardware, on the GTX 1660 with the 4B model (`Ternary-Bonsai-4B-Q2_0_g64.gguf`) and the 700k-token corpus that ships beside the benchmark harness. Two things came out of it that the page could not settle by reading.
+
+**The tool's own CLI is not the flag pair this page discusses.** `llama-triattention-calibrate` prints its own usage — `-m model.gguf -f corpus.txt -o model.triattention [-c 2048] [-ngl 28] [-t 6]` — and reads the corpus from `-f`, not from `--triattention-calibrate`. Those `--triattention-calibrate*` flags exist in the *main* parser's argument table (they appear in `llama-cli --help`) but the standalone tool never consults them. That is the drift this page records, now confirmed from the shipped binary rather than inferred.
+
+**The tool's log line names the basis it believes it captures.** On every run it prints `main: collecting pre-RoPE Q statistics over N chunk(s)`. That is the calibrator stating its *intent* — pre-RoPE — which is exactly the statistic the scorer needs ([[scoring-correctness]]). It is not yet evidence about what it *gets*: the naming collision behind [[ta-11-calibration-post-rope-basis]] is about which tensor the collector matches, and a log line cannot settle that. It does, however, sharpen the question: the tool intends pre-RoPE, so a capture that resolves to the post-RoPE `Qcur` tensor is a bug in the graph's naming, not a deliberate design.
+
+**Behaviour, measured:**
+
+| Observation | Value |
+| :--- | :--- |
+| Model reported by the tool | `layers=36, attn_heads=32, kv_heads=8, rope_theta=10000000.0` — the **4B** architecture, *not* the 27B's 64/24/4 |
+| Corpus slice | 200 KB → **43 670 tokens**, processed as 22 chunks at context 2048 / batch 512 |
+| Throughput | ≈**10 s per chunk**, i.e. ~0.5 s per 1000 tokens of prefill — the calibration pass is fast relative to generation |
+| Output | `/tmp/smoke.triattention`, **1161.07 KB**, from **1152 (layer, head) pairs across 36 attention layers** (36 × 32 = 1152 ✓) |
+| Wall time | **3 m 32 s** for the 200 KB slice |
+| Failure modes | none — no NaN, no abort, no warning. `offset_max` was left at its default of 0 and the pass completed anyway, because calibration *writes* statistics rather than scoring tokens |
+
+The last row is worth holding next to [[ta-8-offset-max-zero-nan]]: the NaN defect bites at **prune** time, not at calibration time, so a successful calibration run says nothing about whether eviction will work.
+
+The full 2 996 382-byte corpus was run as the follow-up; at the measured rate it is ≈50 minutes of calibration for a profile of the same size, since the file's dimensions are per (layer, head) and not per token.
 
 ## See also
 
