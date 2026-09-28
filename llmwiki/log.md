@@ -156,6 +156,20 @@ The vault documented control flow but never data flow; the user asked for the pa
 
 **`[[tokenizer]]` — text to ids and back.** The vocabulary (248 320 entries, GPT-2-style BPE with the `qwen35` pre-tokenizer), the merge-rank lookup, special-token handling and the BOS flag that controls it; then the return path — detokenisation, the partial-UTF-8 buffering a byte-level BPE token makes necessary, and **where a streamed piece becomes the response body** (`server-context.cpp:1768`). It carries a latent-bug flag worth noting: the defensive `[UNK_BYTE_0x…]` fallback (`llama-vocab.cpp:3360-3364`) appends the *whole* piece inside the marker rather than the one bad byte — unproven and untriggered, but exactly the class of multibyte defect the page exists to make findable. Neither source document mentions any of this: the vocabulary is documented nowhere in the vault until now.
 
+## [2026-09-29] measure | the engine runs — first live measurements, and the vault's central verdict is confirmed
+The prebuilt **CUDA 13** bundle from `build/cuda13.zip` executes on this machine's **GTX 1660** (`sm_75`), because it ships its own CUDA 13 runtime and includes `sm_75` in its arch list. The cached `Ternary-Bonsai-4B-Q2_0_g64.gguf` was served end to end (`ftype: Q2_0`, build `b10747-1773b4b1a`), and the run generated coherent text. This is the **first execution of this fork recorded anywhere in the vault's history**, and it was possible despite the missing CUDA toolkit that blocked every earlier plan. Full numbers on [[first-live-measurements]]; the corrections they force are applied to [[benchmarks]], [[build-and-verify]] and the index's contradiction list.
+
+**The decisive result:** with `-ctk turbo3 -ctv q8_0`, the only kernel that touches the KV cache is `flash_attn_ext_vec<(int)128,(int)1,(ggml_type)43,(ggml_type)8,(bool)0>` — `43` = `GGML_TYPE_TURBO3_0`, `8` = `GGML_TYPE_Q8_0` (`src/ggml/include/ggml.h:433`, `:402`). **No turbo `MUL_MAT` exists in the trace, and no cuBLAS or MAGMA kernel appears at all.** [[device-placement]]'s verdict and [[tq-1-missing-gemm-kernels]]'s refutation are now empirical, not read-off-the-code.
+
+**Confirmed by measurement, not by reading:** `Q2_0` weights are served by the MMQ tile path — `mul_mat_q<(ggml_type)42,…>` (`42` = `GGML_TYPE_Q2_0`) is **75 % of all GPU kernel time** ([[quantized-kernel-units]]); CUDA graphs are live (one instantiate, one exec-update, 26 launches, [[cuda-graphs]]); and no WHT kernel is hot ([[turbo-wht]]).
+
+**The trade is now measured.** TurboQuant KV costs ≈11 % of generation throughput and buys 11–15 % of VRAM at ctx 2048: F16 85.6 t/s / 1528 MiB → `turbo3+q8_0` 76.0 t/s / 1348 MiB → `turbo3+turbo2` 74.6 t/s / 1296 MiB (two runs each, `--ignore-eos`). At this context the cache is not bandwidth-bound, so the rotation overhead dominates — which is exactly the regime the vault's `benchmarks` page could never test. Host-side: 1503 MiB peak RSS *identical across all three configurations*, 0 blocks of IO (page cache), and a 1.99 s wall of which **94 % is CPU**; `perf` reports IPC 2.17 with a 56.5 % cache-miss rate, the signature of a dequantize-and-multiply loop.
+
+**Two operational traps worth recording**, both of which had already cost the vault time: `build/cuda13.zip` is **LZMA**-compressed, so `unzip` extracts nothing from it *and reports success* (use `7z x` or `bsdtar`); and `nsys` installs without root only by extracting the archive (`7z x <run>` → tar → `pkg/target-linux-x64/nsys`), because the installer's own prompt ignores `--target`.
+
+**Not claimed:** none of these numbers predict V100 behaviour (`sm_75` has INT8 tensor cores, `sm_70` does not), the model is the 4B at group size 64 rather than the 27B `PQ2_0`, context is 2048 rather than 16K–32K, TriAttention was never exercised for lack of a 4B profile, and nsys runs are not comparable to plain runs. Vault at 72 pages.
+
+
 
 
 

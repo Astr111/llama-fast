@@ -18,6 +18,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[request-lifecycle]] | How one request actually flows: batch → graph → kernels → sampling |
 | [[forward-pass]] | The token path itself: ids → embeddings → 64 blocks → logits, tensor by tensor |
 | [[open-questions]] | Every unresolved question in the vault, ranked, with what each would take |
+| [[first-live-measurements]] | The first real run of this engine: throughput, VRAM, nsys kernels, perf, RAM and IO |
 
 ## Sources (`raw/` snapshots)
 
@@ -117,6 +118,7 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[device-placement]] | Whether a TurboQuant node ever runs on the GPU — and the answer refutes TQ-1's premise |
 | [[decisions-pending]] | The choices the project owes, with each option's cost and a recommendation |
 | [[forward-pass]] | The data flow of one token through the engine, with shapes and the custom stacks placed in it |
+| [[first-live-measurements]] | Measured results from running the engine on this machine's GTX 1660 with the 4B model |
 | [[triattention-calibrate]] | The offline calibration tool, its profile format, and where doc and code diverge |
 | [[upstream-lineage]] | Three upstreams plus a paper, and what that implies for maintenance |
 | [[roadmap]] | The six recorded action items, plus findings the inventory never listed |
@@ -135,5 +137,5 @@ Recorded on the relevant pages and in `log.md`, never silently reconciled:
 8. **`--triattention-calibrate*` may be inert** and `offset_max=0` may yield NaN scores — `[INFERENCE]` from code, not executed. See [[triattention-calibrate]].
 9. **"max 5 draft tokens" exists nowhere in the tree** — the code default is 3 and the flag was removed. See [[speculative-decoding]].
 10. **`block_size=32` in the sources contradicts `QK_TURBO3 = 128` in the code.** See [[turboquant]].
-11. **This machine cannot build or measure anything the project targets** — no CUDA toolkit, and the attached GPU is a GTX 1660 (`sm_75`), not the V100 (`sm_70`). The tree's only configure record is CPU-only. See [[build-and-verify]], [[open-questions]].
+11. **This machine cannot *build* the project and does not have the target GPU — but it can *run* the shipped engine.** No CUDA toolkit, and the attached GPU is a GTX 1660 (`sm_75`), not the V100 (`sm_70`); the tree's only configure record is CPU-only. Correction (2026-09-29): the prebuilt **CUDA 13** bundle from `build/cuda13.zip` runs here and has served the 4B model end to end, so "nothing can be measured" is no longer true — see [[first-live-measurements]]. The CUDA 12.4 bundle still cannot (its library is `sm_86`-only). See [[build-and-verify]], [[v100-sxm2]], [[open-questions]].
 12. **Four confirmed defects were never in any inventory** — NaN scoring ([[ta-8-offset-max-zero-nan]]), the RoPE scope mismatch ([[ta-9-rope-scope-mismatch]]), the per-context `prefix_length` latch ([[ta-10-prefix-length-global-latch]]) and the post-RoPE calibration basis ([[ta-11-calibration-post-rope-basis]]). All four fire in the shipped configuration, and the calibration defect is masked by the NaN one.
