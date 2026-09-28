@@ -63,3 +63,31 @@ Recorded as `[INFERENCE]` from code reading, not as findings, because nothing wa
 ## [2026-09-28] lint | index built, vault at 40 pages
 `index.md` written as the catalog; `lint.sh` is the mechanical pass. Remaining defects at this point are the three hub entity pages (`triattention`, `turboquant`, `innerq`) still being written, which every other page links to.
 
+## [2026-09-28] ingest | wave 2 — six gap pages from already-read material
+Far cheaper than wave 1 (3–9 minutes per agent instead of 20–46): tight file lists, a tool-call ceiling, and "write first, then stop". Added `[[request-lifecycle]]`, `[[sampling]]`, `[[hybrid-memory]]`, `[[gated-delta-net]]`, `[[build-and-verify]]`, `[[conversion-and-packing]]`. Vault at 49 pages, lint clean.
+
+## [2026-09-28] find | the GDN recurrence has its own CUDA kernel and no page mentioned it
+`src/ggml/src/ggml-cuda/gated_delta_net.cu` — a dedicated GPU kernel for the 48 recurrent blocks — appeared in no vault page until `[[gated-delta-net]]` was written. The same pass found `src/src/delta-net-base.cpp` and the Metal/OpenCL counterparts. The recurrence is a first-class compute path, not a side effect of the attention code.
+
+## [2026-09-28] note | recurrent state costs real memory, and one hazard is untracked
+Per-sequence state is ~3.117 MiB per SSM layer, ~149.6 MiB for all 48 layers, ~600 MiB at 4 sequences (arithmetic from read shapes, not measured). Source comments at `src/src/llama-graph.cpp:3733-3745` describe a multi-sequence GDN state hazard that **has no issue page** — it is not in either inventory. Recorded on `[[gated-delta-net]]`, `[[hybrid-memory]]`; noted here so it is not mistaken for a documented defect.
+
+## [2026-09-28] note | the "16 of 64 layers" rule is enforced in code, not just metadata
+`hparams.has_kv`, resolved through `n_layer_kv_from_start` (`src/src/llama-hparams.cpp:274`), is the mechanism behind the layer split that `[[qwen35-architecture]]` derived from the tensor list. Metadata and code agree — which also means TriAttention's budget is an aggregate over a cache only a quarter of the layers populate (`[[triattention]]`, `[[ta-2-budget-starvation]]`).
+
+## [2026-09-28] gap | no test covers a TurboQuant KV type
+`src/tests/test-backend-ops.cpp` contains **zero** case-insensitive matches for `turbo`, as does `src/tests/CMakeLists.txt`. The registered custom tests (`test-pq2-row-shapes`, `test-ptq1_0-cuda-dot`, `test-ptq1_0-element-map`, `src/tests/CMakeLists.txt:339-341`) cover the *weight* types only. Combined with an empty `template-instances/` (see above), the TurboQuant path has neither a build nor a test behind it in this tree. See `[[build-and-verify]]`.
+
+## [2026-09-28] contradict | two GGUF file-type fields the code cannot have written
+The draft's `general.file_type = 15` maps to `GGML_FTYPE_MOSTLY_IQ2_XXS` (`ggml.h:471`) while its tensors are `Q4_K`/`Q6_K`, and the target's `general.file_type = 141` is defined by neither in-tree table (the C enum and `constants.py` both stop at 129). No in-tree converter can correct or produce either label. Recorded on `[[conversion-and-packing]]`; the loader ignores the field, so nothing depends on it — which is exactly why it sat unexplained.
+
+## [2026-09-28] note | the Hadamard contract has a string that never appears in the file
+The out-of-tree packer's manifest declares `normalized-signed-sylvester-walsh-hadamard`, while the GGUF key the same code path writes — and the loader checks — drops `signed`: `normalized-sylvester-walsh-hadamard`. Cosmetic, but it means no manifest-side string is ever the string in the artifact. See `[[conversion-and-packing]]`, `[[prism-hadamard-weight-fold]]`.
+
+## [2026-09-28] gap | three competing entry points for the draft model's conversion
+`src/conversion/dspark.py` emits arch `DSPARK`, `src/conversion/qwen.py` subclasses into arch `DFLASH`, and `src/gguf-py/gguf/scripts/gguf_dspark_to_dflash.py` rewrites legacy `DSPARK` GGUFs into `DFLASH`. Three paths, one drafter lineage, no page previously distinguishing them. See `[[conversion-and-packing]]`, `[[qwen3-dflash-draft]]`.
+
+## [2026-09-28] gap | the token-selection layer had zero coverage
+Before `[[sampling]]`, no page in the vault mentioned `sampler` at all — the whole selection stage, including the parameters a server request can reach, was undocumented. The recorded effective-throughput trend (31.6 → 38.1+ t/s) still has no reproducible artifact: the acceptance statistics live at `src/tools/server/server-context.cpp:615-636` and no run output is checked in.
+
+
