@@ -210,6 +210,25 @@ Six slices over the spots earlier agents had flagged as read only at the surface
 
 **The CPU layer, and the wave's biggest find.** `--repack` / `LLAMA_ARG_REPACK` is documented for the first time — and it **refutes the parent's hypothesis**: `PQ2_0` is **not** absent from the repack tables. It has a selector branch (AVX-512 + AVX-512 VNNI, `ne[1] % 4 == 0`), a `repack_pq2_0_to_pq2_0_4_bl` function, a `tensor_traits` instance and 4×8 gemv/gemm kernels. The correct statement is that it is **present but unreachable on this host** (no AVX-512). What *is* absent: `Q2_0` (42), `TURBO3_0` (43) and `PTQ1_0` (143). And the discovery: **`src/ggml/src/ggml-cpu/arch/` contains zero files** while `CMakeLists.txt:243-244` lists `arch/x86/quants.c` and `arch/x86/repack.cpp` unconditionally for x86. That is a **second instance of the same publication hole** as the empty `template-instances/` ([[build-and-verify]]) — the x86 SIMD quant and repack sources are absent from this checkout, so the kernels the repack tables point at are not readable here at all. Two independent empty-but-referenced directories is no longer a one-off; it is the shape of how this repository was published.
 
+## [2026-09-29] measure | the first live TriAttention run — four claims observed, two facts new
+The 700 K corpus was calibrated on the 4B model (**54 m 45 s**, 333 chunks, 333 → 1 188 931 B profile) and then loaded into a serving run where the pruner fired **11 times in 400 tokens**. Full log and numbers on [[first-live-eviction]]; the affected issue pages carry pointers.
+
+**Observed rather than inferred, for the first time:**
+
+- **[[ta-2-budget-starvation]]** — `Pruned: 96 → 64 tokens (32 evicted, 59 protected [prefix=27, recent=32])`. At `budget = 64`, **59 of the 64 slots are protected**, leaving five for all history. The degeneration to a sliding window is now a measurement.
+- **[[ta-10-prefix-length-global-latch]]** — `prefix=27` is reported identically at positions 96, 128, 160, 192 and 416. The latch does not grow with the request; it is the first prompt's length, held.
+- **[[ta-8-offset-max-zero-nan]]** — the runtime prints `offsets=0` under the shipped defaults and `offsets=17` with `--triattention-offset-max 65536`, so the zero-offset mean is the live configuration. Its consequence stays invisible: output remained fluent either way, which is exactly why this defect has survived.
+- **[[device-placement]]** — `GPU scoring enabled (k_type=43, heads=1152)`: type 43 is `TURBO3_0`, so the turbo-aware scoring path runs as the vault predicted.
+- **Cost**: ~4.8 ms per prune on GPU (9.5 ms for the first), ~53 ms across a 4.6 s generation, and **86.3 t/s versus 86.6 t/s** for the same run without eviction — not measurable here at this budget.
+
+**Two facts no page carried:**
+
+1. **The calibrator stamps a fixed model identity into every profile.** The 4B calibration's header names the model `Bonsai-2-27B-PQ2_0` and records `rope_theta = 10000000`, while the model itself reports `5000000`. The runtime **warns** about the rope base — `WARNING: rope_theta mismatch (calibration=10000000,0, model=5000000,0)` — and **not** about the name, which is accepted silently. Since the format also carries no corpus, no token count and no timestamp, a `.triattention` file cannot be audited from its own contents. The warning is not cosmetic: `omega` is built from the rope base, so the statistic was gathered in a frequency geometry the model does not use.
+2. **The one defect the project cares most about is invisible from this model.** The 4B reports `head_dim = 128`, so the run never reaches the `padded_hd == 256` branch where [[ta-1-wht-inversion-256]] lives. Everything else is now observable on this hardware; that one still is not.
+
+**And a negative worth keeping:** with `budget` above the context length the pruner never fires at all — the first attempt used `budget 256` against 222 cells and produced an empty log. An empty log is a configuration fact, not a failure.
+
+
 
 
 

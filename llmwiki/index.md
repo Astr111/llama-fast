@@ -128,6 +128,7 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[decisions-pending]] | The choices the project owes, with each option's cost and a recommendation |
 | [[forward-pass]] | The data flow of one token through the engine, with shapes and the custom stacks placed in it |
 | [[first-live-measurements]] | Measured results from running the engine on this machine's GTX 1660 with the 4B model |
+| [[first-live-eviction]] | The first live TriAttention run: pruner logs, profile forensics, and four claims observed |
 | [[triattention-calibrate]] | The offline calibration tool, its profile format, and where doc and code diverge |
 | [[upstream-lineage]] | Three upstreams plus a paper, and what that implies for maintenance |
 | [[roadmap]] | The six recorded action items, plus findings the inventory never listed |

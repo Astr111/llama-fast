@@ -46,7 +46,8 @@ The NaN then reaches the selection comparator (`scores[a] > scores[b]`, `:867-87
 
 ## Status
 
-**Open, unlisted, unfixed.** `[INFERENCE]` throughout in the strict sense: decided by reading, never by running — nothing in this repo has been built or executed, and the machine cannot build a CUDA binary ([[build-and-verify]]).
+**Open, unlisted, unfixed.** Originally `[INFERENCE]` throughout: decided by reading, never by running. **Update (2026-09-29): the configuration is now observed live** — a serving run on the 4B model prints `offsets=0` under the shipped defaults and `offsets=17` once `--triattention-offset-max 65536` is passed, and the pruner fires normally either way. So the defect is confirmed as *reachable* rather than merely as *argued*; what remains unobserved is its consequence, because NaN ordering is silent. Full run and log on [[first-live-eviction]].
+
 
 ## Fix sketch
 
