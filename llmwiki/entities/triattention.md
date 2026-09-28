@@ -46,7 +46,10 @@ Pruning is invoked from the **KV cache**, not from the graph: `llama_kv_cache::a
 
 ### 1. Offline calibration
 
-`src/tools/triattention-calibrate/triattention-calibrate.cpp` decodes a text corpus through the model with an eval callback installed (`params.cb_eval = triattention_calibrate_cb_eval`, `:191`). The callback keeps tensors whose name contains `Qcur-<il>` (`parse_qcur_layer`, `:44`), i.e. the **reshaped 3-D Q tensor before RoPE** with shape `[head_dim, n_head, n_tokens]` (`:61-70`), and accumulates, for every `(layer, head, freq band f < head_dim/2)`:
+`src/tools/triattention-calibrate/triattention-calibrate.cpp` decodes a text corpus through the model with an eval callback installed (`params.cb_eval = triattention_calibrate_cb_eval`, `:191`). The callback selects tensors by **name**: `parse_qcur_layer()` (`:44`) accepts any tensor named `Qcur-<il>` (the `-<layer>` suffix is appended by the graph callback, `src/src/llama-context.cpp:2795`), and the collector additionally requires the reshaped 3-D shape `[head_dim, n_head, n_tokens]` with an even `ne[0]` (`:61-70`). It then accumulates, for every `(layer, head, freq band f < head_dim/2)`:
+
+> Contradiction (2026-09-28): the collector's own comment calls that tensor "reshaped 3D Q tensor **before RoPE**" (`triattention-calibrate.cpp:60`). In the architectures this tree was read against, the `Qcur` tensor carrying that name is emitted **after** the RoPE op — `src/src/models/qwen35.cpp:367-379` (`ggml_rope_multi` then `cb(Qcur, "Qcur", il)`) for the target model, and the same ordering in the stock path (`src/src/models/llama.cpp:152-158`). A name-based filter therefore captures post-RoPE Q, while the runtime scores keys it has first RoPE-inverted (`triattention_invert_rope`, `:382`). Which basis the shipped `bonsai-27b.triattention` actually holds is not settled by the code; [[triattention-calibrate]] works the consequence through.
+
 
 ```c
 const float re = q_ptr[k];            // ":126-127" — Half layout: real in [0, fc), imag in [fc, 2fc)
