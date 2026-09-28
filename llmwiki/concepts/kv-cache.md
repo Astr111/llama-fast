@@ -48,4 +48,4 @@ The two levers that address the cache proper are consequently in tension with th
 
 ## See also
 
-[[kv-eviction]] · [[quantization]] · [[triattention]] · [[turboquant]] · [[cuda-graphs]] · [[gemm-dispatch]] · [[performance-profile]] · [[overview]]
+[[kv-eviction]] · [[quantization]] · [[triattention]] · [[turboquant]] · [[cuda-graphs]] · [[gemm-dispatch]] · [[performance-profile]] · [[overview]] · [[kv-cache-dsv4]]
