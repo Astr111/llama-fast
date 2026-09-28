@@ -15,6 +15,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[roadmap]] | What is planned, what is unplanned but visible, and the sequencing conflicts |
 | [[codebase-map]] | Where anything lives in the tree, and whether it builds |
 | [[performance-profile]] | Where the GPU time goes, and which attributions survive contact with the code |
+| [[request-lifecycle]] | How one request actually flows: batch → graph → kernels → sampling |
 
 ## Sources (`raw/` snapshots)
 
@@ -33,6 +34,8 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | :--- | :--- |
 | [[ternary-bonsai-2-27b]] | The target model, read from its GGUF header: `PQ2_0`, `head_dim=256`, hybrid attention/SSM |
 | [[qwen35-architecture]] | The architecture the sources never name: 64 blocks, only 16 with a KV cache |
+| [[hybrid-memory]] | How the engine keeps KV *and* recurrent state in one model |
+| [[gated-delta-net]] | The recurrence inside the 48 SSM blocks, and its per-sequence cost |
 | [[v100-sxm2]] | The deployment target and the capability gates that shape every design decision |
 | [[triattention]] | Calibration-guided KV eviction: the mechanism and where it runs |
 | [[turboquant]] | The KV-cache vector quantization scheme: types, geometry, rotation, fused dots |
@@ -42,6 +45,7 @@ Maintained by the LLM. Last full pass: 2026-09-28.
 | [[prismml-weight-kernels]] | `PQ2_0`/`PTQ1_0` weight kernels and their arch reach (out of scope for edits) |
 | [[cuda-graphs]] | `GGML_CUDA_GRAPH_OPT=1`: what graph reuse and concurrent streams actually buy |
 | [[speculative-decoding]] | The `draft-dflash` block-proposal path |
+| [[sampling]] | The token-selection chain and the parameters a request can reach |
 | [[qwen3-dflash-draft]] | The draft model itself |
 
 ## Concepts (ideas)
@@ -87,6 +91,8 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[performance-profile]] | The recorded profiling conclusions and their confounds |
 | [[benchmarks]] | The two measurement suites, neither run on the deployment hardware |
 | [[codebase-map]] | Tree layout, custom-code locations, build system, and the missing template instances |
+| [[build-and-verify]] | How the tree is built, what it ships, and how a kernel change would be checked |
+| [[conversion-and-packing]] | How the `PQ2_0` artifact and the Hadamard fold were produced, and where that trail leaves the repo |
 | [[triattention-calibrate]] | The offline calibration tool, its profile format, and where doc and code diverge |
 | [[upstream-lineage]] | Three upstreams plus a paper, and what that implies for maintenance |
 | [[roadmap]] | The six recorded action items, plus findings the inventory never listed |
