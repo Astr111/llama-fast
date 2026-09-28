@@ -147,13 +147,13 @@ Turbo types appear in **no** matmul fast path. `grep -c TURBO` returns 0 for `mm
 | `src/ggml/src/ggml.c:708-731` | type traits (`blck_size`, `type_size`, `to_float`, `from_float_ref`) |
 | `src/ggml/src/ggml.c:6634-6670` | `ggml_turbo_wht()` op builder |
 | `src/ggml/src/ggml-turbo-quant.c` (627 lines) | CPU reference codec: `turbo_rotation`/QJL tables, centroid lookup, `quantize_row_turbo{3,2,4}_0_ref`, `dequantize_row_turbo{3,2,4}_0`, `quantize_turbo{3,2,4}_0` |
-| `src/ggml/src/ggml-cuda/turbo-quant.cuh` (421 lines) | centroid + midpoint tables `:23-40`, `:297-305`; WHT sign arrays `:47-79`; sequential `turbo_fwht_128`/`_64` and their dead wrappers `:88-139`; InnerQ statics `:147-157`; `quantize_f32_turbo4_0_block` `:336`, `quantize_f32_turbo3_0_block` `:370`, `quantize_f32_turbo2_0_block` `:405`; `turbo*_dequant_element` `:348-421` |
+| `src/ggml/src/ggml-cuda/turbo-quant.cuh` (421 lines) | centroid + midpoint tables `:23-42`, `:297-310`; WHT sign arrays `:47-79`; sequential `turbo_fwht_128`/`_64` and their dead wrappers `:88-139`; InnerQ statics `:147-157`; `quantize_f32_turbo4_0_block` `:336`, `quantize_f32_turbo3_0_block` `:370`, `quantize_f32_turbo2_0_block` `:405`; `turbo*_dequant_element` `:348-421` |
 | `src/ggml/src/ggml-cuda/set-rows.cu` | encoder kernels `k_set_rows_turbo3` `:237`, `k_set_rows_turbo2` `:608`, `k_set_rows_turbo4` `:952`; tail kernels `:422`, `:775`; launchers `:537`, `:884`, `:1104`; dispatch into `ggml-cuda.cu`'s `SET_ROWS` cases |
 | `src/ggml/src/ggml-cuda/dequantize.cuh:154-176` | `dequantize_turbo4_0`/`_turbo3_0`/`_turbo2_0` |
 | `src/ggml/src/ggml-cuda/convert.cu:664-669, 735-741, 772-777, 836-841` | fp16/fp32/bf16 conversion dispatch for the turbo types |
 | `src/ggml/src/ggml-cuda/cpy.cu`, `src/ggml/src/ggml-cuda/getrows.cu` | cpy reaches the turbo dequantizers through `dequantize.cuh`; `GET_ROWS` has no turbo case |
 | `src/ggml/src/ggml-cuda/turbo-wht.cu` / `.cuh` | `k_turbo_wht_f32<direction,group_size>` `:23-96`, tail pass-through `:100-114`, `ggml_cuda_turbo_wht` `:117-174`, launches `:151-160` |
-| `src/ggml/src/ggml-cuda/ggml-cuda.cu:2092-2093`, `:5325-5335` | `GGML_OP_TURBO_WHT` dispatch; `supports_op` for `SET_ROWS` |
+| `src/ggml/src/ggml-cuda/ggml-cuda.cu:2092-2093`, `:5320-5336` | `GGML_OP_TURBO_WHT` dispatch; `supports_op` for `SET_ROWS` |
 | `src/ggml/src/ggml-cuda/fattn-common.cuh:333, 387, 436, 778, 838, 895` | the only CUDA turbo dot products and V dequantizers |
 | `src/ggml/src/ggml-cuda/fattn.cu:339-369, 382-399` | registered FA type pairs and the KV-type support predicate |
 | `src/ggml/src/ggml-cuda/fattn-vec.cuh:87-95` | turbo K/V treated as "unquantized" for vec-kernel thread/row geometry |
