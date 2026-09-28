@@ -64,7 +64,7 @@ The enums section describes mode 0 as `TRIATTENTION_MODE_GLOBAL` — "Union-base
 ### Runtime semantics the document does not mention
 
 - The recent-window protection is mandatory and independent of `protect_prefill`: `triattention_prune_impl` always protects positions `>= max_pos − divide_length + 1` (`:1128`), so eviction candidates are fewer than "all non-prompt tokens". See [[ta-2-budget-starvation]].
-- Config validation is absent: `triattention_init` checks the calibration file's `head_dim`, `n_kv_heads` and `rope_theta` only (`src/src/llama-triattention.cpp:637-660`); nothing checks `budget` against `divide_length`/`prefix_length` ([[ta-7-config-validation]]).
+- Config validation is absent: `triattention_init` checks the calibration file's `head_dim`, `n_kv_heads` and `rope_theta` only (`src/src/llama-triattention.cpp:642-660`); nothing checks `budget` against `divide_length`/`prefix_length` ([[ta-7-config-validation]]).
 - `triattention_config`'s documented defaults in the header comment (budget 2048, divide_length 128, offset_max 65536, normalize `false`, seed 0) are the design values; the CLI defaults are `0`, `0`, `0`, `true`, `-1` (`src/common/common.h:752-766`). See [[source-triattention]].
 
 ### The CUDA section is faithful

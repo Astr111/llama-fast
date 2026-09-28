@@ -68,7 +68,7 @@ The hybrid memory container splits the two: the KV cache is constructed with the
 
 **KV side — 16 layers.** With `n_embd_k_gqa = n_embd_head_k · n_head_kv = 256 · 4 = 1024` (`src/src/llama-hparams.cpp:131-141`) and the same for V, one token costs **2048 elements per attention layer**, i.e. **32 768 elements per token across the model** — a quarter of the 131 072 a dense 64-layer model of the same shape would hold.
 
-Bytes, from the block layouts in code (`block_turbo3_0` = 2 + 32 + 16 = 50 B per 128 values, `block_turbo2_0` = 2 + 32 = 34 B per 128, `q8_0` = 2 + 32 = 34 B per 32 — `src/ggml/src/ggml-common.h:324-333`, `:374-381`, sizes from the `static_assert`s; the doc comments immediately above those structs are stale for `turbo2`/`turbo3` and are not used here):
+Bytes, from the block layouts in code (`block_turbo3_0` = 2 + 32 + 16 = 50 B per 128 values, `block_turbo2_0` = 2 + 32 = 34 B per 128, `q8_0` = 2 + 32 = 34 B per 32 — `src/ggml/src/ggml-common.h:324-333`, `:374-381`, sizes taken from the `static_assert`s; the prose comments directly above the `turbo2`/`turbo3` structs still describe a 32-value block — 14 B and 10 B — which contradicts both `QK_TURBO3 = QK_TURBO2 = 128` and the asserted struct sizes, so they are not used here):
 
 | Profile | K row (1024) | V row (1024) | Per layer | Per token (×16) | 16K context | Tokens / 1 GiB (KV only) |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
