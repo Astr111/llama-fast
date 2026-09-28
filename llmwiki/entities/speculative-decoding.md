@@ -130,6 +130,49 @@ The figures `40 → 69 tok/s` and `31.6 → 38.1+ t/s` are a measurement from th
 - `--spec-draft-n-min` default 0 means "no minimum"; with `n_min > 0` a partially-matching block below the floor is discarded. No source states whether the project used a non-zero minimum. `[UNVERIFIED]`.
 - Acceptance is reported per position by the server behind a stats flag; no archived run output from this project is present in the tree, so the 31.6 → 38.1+ curve cannot be re-derived here. `[UNVERIFIED]`.
 
+## What the in-tree design doc adds
+
+`src/docs/speculative.md` (479 lines; [[source-speculative]]) is the upstream llama.cpp speculative-decoding reference as of this checkout. Three things it adds beyond the sections above.
+
+### The tuning table — and what it is, and is not, evidence of
+
+The doc's only measured table sits in the **DFly** subsection, "Tuning `--spec-draft-n-max`" (`llmwiki/raw/speculative.md:101-116`):
+
+| `--spec-draft-n-max` | tok/s | acceptance | committed tokens per round |
+|---|---|---|---|
+| 5 | 35.7 | 57.5 % | 4.00 |
+| 6 | 42.0 | 64.9 % | 4.99 |
+| 7 (default for block size 8) | 37.5 | 52.7 % | 4.82 |
+
+(`:109-113`.) It was measured on an **M5 Pro** — Apple Silicon, not the V100 — with the DFly pairing (`Qwen/Qwen3-8B` target + `AngelSlim/Qwen3-8B-DFly-Block8` drafter), greedy, interleaved rounds (`:107`). It is evidence that the block-drafter optimum is **interior** — "the default (the trained block size minus one) is not always it" (`:105`), "sweep it rather than assuming the largest value wins" (`:115`) — not evidence about the V100, and not even about DFlash proper: the cost model the table prices (`fixed + k * per_position` correction-head projections, `:103-104`) is DFly-specific, and this fork's drafter is DFlash2, so the numbers transfer even less. Only the interior-optimum lesson does.
+
+### Doc-versus-code drift on the flags and defaults
+
+Verified against `src/common/arg.cpp`, `src/common/common.h`, `src/common/speculative.cpp`:
+
+| Flag | Doc default | Code default | Status |
+| :--- | :--- | :--- | :--- |
+| `--spec-draft-n-max` | 3 (`:274-276`) | 3 (`common.h:326`, `arg.cpp:4121`) | exists, matches |
+| `--spec-draft-n-min` | 0 (`:277`) | 0 (`common.h:327`, `arg.cpp:4130`) | exists, matches |
+| `--spec-draft-p-split` / `--draft-p-split` | 0.10 | 0.1 (`common.h:329`, `arg.cpp:4138`) | exists, matches |
+| `--spec-draft-p-min` / `--draft-p-min` | 0.00 | 0.0 (`common.h:330`, `arg.cpp:4145`) | exists, matches |
+| `--spec-draft-ngl` / `-ngld` / `--gpu-layers-draft` | auto | auto (`arg.cpp:4170-4174`) | exists, matches |
+| `--spec-draft-backend-sampling` / `--no-spec-draft-backend-sampling` | backend by default | `backend_sampling = true` (`common.h:332`, `arg.cpp:4152-4158`) | exists, matches |
+| `--draft` / `--draft-n` / `--draft-max` | — (not in this doc) | — | **removed**: hard `arg_removed()` at `arg.cpp:4335-4341` |
+| `--draft-min` / `--draft-n-min` | — | — | **removed**: `arg.cpp:4342-4348` |
+| `--spec-draft-conf-min` | default 0 = disabled (`:142-143`) | — | **documented, not registered** in this tree — grep finds it only in the doc |
+
+So the doc's own defaults are live, and the drift that bites is at the edges: the removed legacy family fails parse with "the argument has been removed. use --spec-draft-n-max or --spec-ngram-mod-n-max" (`arg.cpp:4337-4339`), and `--spec-draft-conf-min` is doc-only in this checkout (`[UNVERIFIED]` whether a newer upstream registers it).
+
+### Which path the doc describes
+
+The doc's DFlash section (`:55-79`) describes exactly the block-proposal path this fork runs — whole block drafted in a single forward pass, target hidden states injected into the draft's attention, `--spec-draft-n-max` clamped to the trained block size (`:75`; code clamp `speculative.cpp:1739-1746`, `block_size - 1` = 7 for a block-8 drafter). The fork's variant diverges in the drafter: [[qwen3-dflash-draft]] is DFlash2 (`selector_top_k > 0 ⇒ is_dflash2`, `speculative.cpp:1724-1725`), whose block is denoised via a masked decode and walked as a lattice with `predecessor` state (`:2006-2030`) — machinery the doc never mentions. The doc's own DFlash example passes `--spec-draft-n-max 15` (`:72`); on this fork's drafter that exceeds the clamp and would be reduced to 7 with a warning (`:1742-1746`).
+
+### What it resolves on this page
+
+- **The "max 5" origin is sharpened, not settled.** The doc's default for a block-8 drafter is **7**, its DFlash example is 15, and its own table shows 5 beating 7 on a different machine and drafter — so the recorded 5 is a plausible interior tuning choice (code default 3, clamp 7), consistent with the doc's "sweep it" guidance, but no source records *why* 5 was picked. Still `[UNVERIFIED]`; now at least it sits inside the doc-sanctioned tuning space rather than unexplained.
+- **The interior-optimum concern gains an in-tree citation.** "The optimum depends on how the backend prices a multi-row verify, so it moves with hardware and with the target" (`:115-117`) is the upstream statement of why the V100 sweep should be re-run, and why the block width feeding [[cuda-graphs]]' graph key (`ggml_cuda_graph_update_required`, `src/ggml/src/ggml-cuda/ggml-cuda.cu:2597-2637`) matters. See [[performance-profile]] and [[benchmarks]] for the hardware the recorded figures were taken on.
+
 ## See also
 
 [[qwen3-dflash-draft]] · [[ternary-bonsai-2-27b]] · [[performance-profile]] · [[benchmarks]] · [[overview]] · [[kv-cache]] · [[sampling]] · [[cuda-graphs]] · [[ta-2-budget-starvation]] · [[v100-sxm2]] · [[upstream-lineage]] · [[source-state-md]] · [[source-readme]]
