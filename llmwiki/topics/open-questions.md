@@ -79,4 +79,4 @@ A practical consequence: the restore path for the empty `template-instances/` di
 
 ## See also
 
-[[roadmap]] · [[overview]] · [[build-and-verify]] · [[performance-profile]] · [[benchmarks]] · [[scoring-correctness]] · [[triattention-calibrate]] · [[codebase-map]] · [[release-artifacts]] · [[decisions-pending]] · [[device-placement]]
+[[roadmap]] · [[overview]] · [[build-and-verify]] · [[performance-profile]] · [[benchmarks]] · [[scoring-correctness]] · [[triattention-calibrate]] · [[codebase-map]] · [[release-artifacts]] · [[decisions-pending]] · [[device-placement]] · [[documentation-coverage]]

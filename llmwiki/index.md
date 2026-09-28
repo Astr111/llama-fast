@@ -116,6 +116,7 @@ TurboQuant's inventory, from [[source-state-md]] §4 — several premises correc
 | [[kv-accounting]] | Whether the published tokens-per-GB figures describe this model's real KV structure |
 | [[server-layer]] | What `llama-server` adds: slots, endpoints, and the statistics behind the numbers |
 | [[open-questions]] | The whole unresolved backlog, classified by what it would take to close |
+| [[documentation-coverage]] | What the vault covers, what it does not, and the ranked gaps that matter |
 | [[device-placement]] | Whether a TurboQuant node ever runs on the GPU — and the answer refutes TQ-1's premise |
 | [[decisions-pending]] | The choices the project owes, with each option's cost and a recommendation |
 | [[forward-pass]] | The data flow of one token through the engine, with shapes and the custom stacks placed in it |
