@@ -44,23 +44,31 @@ struct triattention_gpu_state {
 // n must be 128, threads = 64 (one butterfly per thread per stage)
 // ============================================================================
 
-static __device__ void cooperative_fwht_128(float * smem, int tid) {
+static __device__ void cooperative_fwht_128(float * smem, int tid, bool active) {
     // 7 butterfly stages for 128 elements
     for (int h = 1; h < 128; h *= 2) {
         int block_half = h;
         int block_size = h * 2;
         int i = (tid / block_half) * block_size + (tid % block_half);
-        float a = smem[i];
-        float b = smem[i + block_half];
+        float a = 0.0f;
+        float b = 0.0f;
+        if (active) {
+            a = smem[i];
+            b = smem[i + block_half];
+        }
         __syncthreads();
-        smem[i]              = a + b;
-        smem[i + block_half] = a - b;
+        if (active) {
+            smem[i]              = a + b;
+            smem[i + block_half] = a - b;
+        }
         __syncthreads();
     }
     // Normalize
-    const float inv_sqrt_128 = 0.08838834764831845f;
-    smem[tid * 2]     *= inv_sqrt_128;
-    smem[tid * 2 + 1] *= inv_sqrt_128;
+    if (active) {
+        const float inv_sqrt_128 = 0.08838834764831845f;
+        smem[tid * 2]     *= inv_sqrt_128;
+        smem[tid * 2 + 1] *= inv_sqrt_128;
+    }
     __syncthreads();
 }
 
@@ -69,18 +77,22 @@ static __device__ void cooperative_fwht_128(float * smem, int tid) {
 // R^T * x = signs1 * FWHT(signs2 * x)
 // ============================================================================
 
-static __device__ void inverse_wht_rotation_128(float * smem, int tid) {
+static __device__ void inverse_wht_rotation_128(float * smem, int tid, bool active) {
     // Step 1: multiply by signs2
-    smem[tid * 2]     *= TURBO_WHT_SIGNS2[tid * 2];
-    smem[tid * 2 + 1] *= TURBO_WHT_SIGNS2[tid * 2 + 1];
+    if (active) {
+        smem[tid * 2]     *= TURBO_WHT_SIGNS2[tid * 2];
+        smem[tid * 2 + 1] *= TURBO_WHT_SIGNS2[tid * 2 + 1];
+    }
     __syncthreads();
 
     // Step 2: FWHT (cooperative)
-    cooperative_fwht_128(smem, tid);
+    cooperative_fwht_128(smem, tid, active);
 
     // Step 3: multiply by signs1
-    smem[tid * 2]     *= TURBO_WHT_SIGNS1[tid * 2];
-    smem[tid * 2 + 1] *= TURBO_WHT_SIGNS1[tid * 2 + 1];
+    if (active) {
+        smem[tid * 2]     *= TURBO_WHT_SIGNS1[tid * 2];
+        smem[tid * 2 + 1] *= TURBO_WHT_SIGNS1[tid * 2 + 1];
+    }
     __syncthreads();
 }
 
@@ -209,24 +221,9 @@ static __global__ void triattention_score_kernel(
 
     // ---- Step 2: Inverse WHT rotation (turbo2/turbo3 only) ----
     if constexpr (NEED_WHT_INV) {
-        // Process in 128-element blocks
-        for (uint32_t b = 0; b < padded_hd; b += 128) {
-            // Remap thread to work on this 128-elem block
-            if (f < 64) {
-                float * block = k_smem + b;
-                // Signs2 → FWHT → Signs1 (inverse rotation)
-                // Note: for f < 64, thread handles elements [f*2, f*2+1] within block
-                // But we need to handle the case where padded_hd > 128 (multiple blocks)
-                // For simplicity with 64 threads and 128 elements per block, each thread
-                // handles 2 elements
-            }
-        }
-        // For head_dim = 128 (standard case), single block:
-        if (padded_hd == 128 && f < 64) {
-            inverse_wht_rotation_128(k_smem, f);
-        }
-        // For head_dim > 128, we'd need multiple passes.
-        // Most turbo models use head_dim=128, so this covers the primary case.
+        const uint32_t wht_group = (uint32_t)f / 64;
+        const bool full_group = wht_group < padded_hd / 128;
+        inverse_wht_rotation_128(k_smem + wht_group * 128, f % 64, full_group);
     }
 
     // ---- Step 3: Inverse RoPE ----
