@@ -616,6 +616,10 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
         }
     }
 
+    if (triattention_st != nullptr && p0 <= 0 && p1 >= std::numeric_limits<llama_pos>::max()) {
+        triattention_st->prefix_length = 0;
+    }
+
     return true;
 }
 
@@ -1349,9 +1353,10 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch & 
 
     // TriAttention: set prefix length and check if pruning should trigger
     if (triattention_st != nullptr) {
-        // Set prefix_length once on the first prompt batch (contains position 0, >1 token).
+        // Set prefix_length on prompt batches containing position 0 (>1 token).
         // This enables prefix protection during pruning so prompt tokens are never evicted.
-        if (triattention_st->prefix_length == 0 && ubatch.n_tokens > 1) {
+        // If a new prompt starts at position 0, update prefix_length to reflect the new prompt boundary.
+        if (ubatch.n_tokens > 1) {
             bool has_pos_zero = false;
             llama_pos max_batch_pos = 0;
             for (uint32_t i = 0; i < ubatch.n_tokens; i++) {

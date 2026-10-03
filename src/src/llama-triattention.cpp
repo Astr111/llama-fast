@@ -1153,7 +1153,22 @@ int32_t triattention_prune_impl(
     }
 
     const uint32_t n_decode = (uint32_t)decode_cell_idx.size();
-    const uint32_t decode_budget = (budget > n_protected) ? (budget - n_protected) : 0;
+    
+    // Prevent budget starvation (TA-2): guarantee a minimum allocation for historical tokens
+    // so TriAttention does not collapse into a pure sliding window when prefix + recent >= budget.
+    uint32_t min_history_budget = 0;
+    if (n_decode > 0 && budget > cfg.divide_length) {
+        // Reserve up to 25% of the budget (max 512 tokens) or at least min(n_decode, budget/8)
+        min_history_budget = std::min<uint32_t>(n_decode, std::max<uint32_t>(budget / 8, 32));
+        if (min_history_budget > (budget - cfg.divide_length)) {
+            min_history_budget = budget - cfg.divide_length;
+        }
+    }
+
+    uint32_t decode_budget = (budget > n_protected) ? (budget - n_protected) : 0;
+    if (decode_budget < min_history_budget) {
+        decode_budget = min_history_budget;
+    }
 
     if (n_decode <= decode_budget) return 0;
 
