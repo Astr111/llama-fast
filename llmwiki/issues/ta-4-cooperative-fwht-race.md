@@ -27,7 +27,7 @@ Undefined behavior on Volta (sm_70); potential score corruption feeding the evic
 
 ## Status
 
-Unresolved. Requires warp-level primitive audit. ([[source-state-md]], §3 TA-4)
+**RESOLVED (2026-10-04).** Fixed in `src/ggml/src/ggml-cuda/triattention-score.cu` via commit `5a52561`. Added `bool active` parameter to `cooperative_fwht_128` and `inverse_wht_rotation_128`, guarding memory accesses and butterfly math when warp threads diverge.
 
 ## Fix sketch
 

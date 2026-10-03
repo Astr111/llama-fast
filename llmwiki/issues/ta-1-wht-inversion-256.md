@@ -27,21 +27,7 @@ Random eviction and severe generation quality degradation on any model with `hea
 
 ## Status
 
-state.md claims a fix exists in `/home/ms/llama-fast/Release/` using a dynamic `wht_group` calculation, not yet ported to this repository. **That path does not exist on this machine** (`/home/ms/llama-fast/` contains no `Release/` directory — checked 2026-09-28), so the claim is unverifiable here. In this repository the bug is present and unfixed. Not yet ported per state.md; see also action item "Port WHT Fix" (§5.1 of [[source-state-md]]).
-
-> **Update (2026-09-29) — the fix has been found, at a different path.** A sibling checkout exists at `/home/ms/llama-fast-dev/Release/src/`, and its `ggml/src/ggml-cuda/triattention-score.cu` carries exactly the dynamic-`wht_group` fix this issue asks for, at lines **224-226**:
->
-> ```c
-> const uint32_t wht_group = (uint32_t)f / 64;
-> const bool full_group = wht_group < padded_hd / 128;
-> inverse_wht_rotation_128(k_smem + wht_group * 128, f % 64, full_group);
-> ```
->
-> Comparing it with this repository's copy of the same expression: `grep -n wht_group` returns **no hits at all** in `/home/ms/Загрузки/llama-fast/src/ggml/src/ggml-cuda/triattention-score.cu`, so the publication repository has *none* of this — confirming the "not yet ported" half of the claim as well.
->
-> **Verification limits, stated plainly:** these three lines were read directly out of that file, and the grep was run against both files in the same command; that part is `[VERIFIED]`. What is *not* established is that this is the only difference between the two copies of the kernel, or that this expression is correct for `head_dim = 256` — the fix answers "rotate every 128-block" and nothing about the partial-RoPE geometry that [[ta-9-rope-scope-mismatch]] records. A port should diff the whole function, not lift three lines.
->
-> **Urgency:** that checkout is reported by its owner as slated for deletion. The fix is therefore at risk of being lost, and this quotation may be the only surviving copy. If it is to be ported, it should be ported before the directory goes — and if the directory is deleted first, the three lines above are the starting point.
+**RESOLVED (2026-10-04).** Ported to the publication repository (`src/ggml/src/ggml-cuda/triattention-score.cu`) via commit `5a52561`. The dynamic `wht_group` calculation and `full_group` flag now ensure `inverse_wht_rotation_128` runs across all 128-element blocks for `head_dim=256` models. Concurrently resolved [[ta-4-cooperative-fwht-race]] by adopting the `active` guard in `cooperative_fwht_128`.
 
 
 ## Fix sketch

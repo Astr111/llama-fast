@@ -46,7 +46,11 @@ The NaN then reaches the selection comparator (`scores[a] > scores[b]`, `:867-87
 
 ## Status
 
-**Open, unlisted, unfixed.** Originally `[INFERENCE]` throughout: decided by reading, never by running. **Update (2026-09-29): the configuration is now observed live** — a serving run on the 4B model prints `offsets=0` under the shipped defaults and `offsets=17` once `--triattention-offset-max 65536` is passed, and the pruner fires normally either way. So the defect is confirmed as *reachable* rather than merely as *argued*; what remains unobserved is its consequence, because NaN ordering is silent. Full run and log on [[first-live-eviction]].
+**RESOLVED (2026-10-04).** Fixed across `src/common/common.h`, `src/src/llama-triattention.cpp`, and `src/ggml/src/ggml-cuda/triattention-score.cu` via commit `585fe5d`.
+- Implemented Alternative 3 (comprehensive defense):
+  1. Default `triattention_offset_max = 65536` in `common.h` ensures 17 geometric offsets are generated when CLI arguments are omitted.
+  2. Guard in `triattention_init` logs warning and sets `disable_trig = true` (norm-only fallback) if `n_offsets == 0` when `budget > 0`.
+  3. Arithmetic fail-safes in both CPU (`triattention_score_keys`) and GPU (`k_triattention_score_half`) scoring routines prevent division by zero or NaN creation when `n_offsets == 0`.
 
 
 ## Fix sketch

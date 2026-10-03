@@ -30,11 +30,11 @@ the register — for reading, for triage, and for deciding what to do first.
 
 | # | Item | Sev | Status | Cost to fix |
 | --: | :--- | :--- | :--- | :--- |
-| **A1** | **TA-8** — `offset_max = 0` makes every eviction score NaN, in the shipped scripts | CRITICAL | OBSERVED | two lines (guard + a working default) |
+| **A1** | **TA-8** — `offset_max = 0` makes every eviction score NaN, in the shipped scripts | CRITICAL | **RESOLVED** | Fixed via commit `585fe5d` (working default 65536 + init guard + kernel fail-safes) |
 | **A2** | **TA-11** — the shipped calibration profile is in the wrong basis | CRITICAL | OPEN | move the capture hook; regenerate the profile |
 | **A3** | **TA-9** — the scorer inverts RoPE over 256 dims with the wrong exponent | HIGH | OPEN | parameterise the inverse by `n_rot` + sections |
 | **A4** | **TA-10** — `prefix_length` latches per context and the server never resets it | HIGH | OBSERVED | make the boundary per-sequence |
-| **A5** | **TA-1** — WHT inversion skipped at `head_dim=256`; **the fix exists in a sibling checkout that is slated for deletion** | CRITICAL | BLOCKED | port three lines (quoted in the issue page) before that checkout goes |
+| **A5** | **TA-1** — WHT inversion skipped at `head_dim=256` | CRITICAL | **RESOLVED** | Fixed via commit `5a52561` (ported dynamic `wht_group` from Release) |
 | **B1** | **INFRA-1** — `template-instances/` empty → no CUDA build from this tree | INFRA | OPEN | one `unzip` from `llama-fast-src.zip` |
 | **B2** | **INFRA-2** — `ggml-cpu/arch/` empty → x86 SIMD sources absent | INFRA | OPEN | source restoration (not in the archive — see the page) |
 | **B3** | **INFRA-3** — no CUDA toolkit on this machine; attached GPU is `sm_75`, not the target `sm_70` | INFRA | BLOCKED | different machine |
@@ -53,10 +53,10 @@ inseparable. A1 is also the gate: with every score NaN, the others cannot even b
 
 | ID | Sev | Status | One line | Detail |
 | :--- | :--- | :--- | :--- | :--- |
-| TA-1 | CRITICAL | BLOCKED | The scoring kernel skips WHT inversion when `padded_hd == 256`; triggered by the target model's `head_dim = 256` | [[ta-1-wht-inversion-256]] |
+| TA-1 | CRITICAL | **RESOLVED** | The scoring kernel skipped WHT inversion when `padded_hd == 256`; fixed via dynamic `wht_group` (commit `5a52561`) | [[ta-1-wht-inversion-256]] |
 | TA-2 | HIGH | OBSERVED | Long prefixes starve the budget: protection consumes `prefix + window` and eviction becomes a sliding window | [[ta-2-budget-starvation]] |
 | TA-3 | HIGH | OPEN | CPU fallback does one synchronous D2H copy **per KV cell** — 15–30 s stalls | [[ta-3-cpu-fallback-transfers]] |
-| TA-4 | MEDIUM | OPEN | `cooperative_fwht_128` assumes 64 active threads; UB on Volta | [[ta-4-cooperative-fwht-race]] |
+| TA-4 | MEDIUM | **RESOLVED** | `cooperative_fwht_128` assumed 64 active threads; fixed via `active` thread guard (commit `5a52561`) | [[ta-4-cooperative-fwht-race]] |
 | TA-5 | MEDIUM | RE-SCOPED | `freq_scale_sq` is an identity multiply — **not a bug**: the doc's `1/ω²` weighting exists nowhere in `src/` | [[ta-5-freq-scale-dead-code]] |
 | TA-6 | LOW | OPEN | Overlap double-counting when `recent` and `prefix` ranges intersect | [[ta-6-overlap-double-counting]] |
 | TA-7 | LOW | OPEN | No validation of incompatible `budget`/`prefix`/`window` combinations | [[ta-7-config-validation]] |
@@ -79,7 +79,7 @@ inseparable. A1 is also the gate: with every score NaN, the others cannot even b
 
 | ID | Sev | Status | One line | Detail |
 | :--- | :--- | :--- | :--- | :--- |
-| **TA-8** | CRITICAL | **OBSERVED** | `offset_max` defaults to 0 → `n_offsets = 0` → the mean aggregate is `0 × (1/0)` → **NaN for every key**, and NaN reaches `std::partial_sort`'s comparator (UB). Neither launch script passes the flag. Live log: `offsets=0` | [[ta-8-offset-max-zero-nan]] |
+| **TA-8** | CRITICAL | **RESOLVED** | `offset_max` defaulted to 0 → `n_offsets = 0` → NaN scoring; fixed via commit `585fe5d` (working default 65536 + init guard + kernel fail-safes) | [[ta-8-offset-max-zero-nan]] |
 | **TA-9** | HIGH | OPEN | The scorer builds `omega` from `head_dim` and inverts every pair `(f, f+128)` across all 256 dimensions, while the model rotates `n_rot = 64` with exponent θ^(−2f/**64**). The angle error is θ^(3f/128) — **it grows with frequency**. Not compensated anywhere | [[ta-9-rope-scope-mismatch]] |
 | **TA-10** | HIGH | **OBSERVED** | `prefix_length` is one latch per KV cache, set by the first batch with position 0, reset only by `clear()` — and the server never full-clears (slot recycle is `seq_rm`). A later longer prompt loses its own middle to eviction. Live log: `prefix=27` at every position | [[ta-10-prefix-length-global-latch]] |
 | **TA-11** | CRITICAL | OPEN | The calibrator matches the tensor name `Qcur-<layer>`, which in the `qwen35` graph is the **post-RoPE** output, while the scorer deliberately scores **pre-RoPE** keys. The phase term is position-corrupted and the norm understated | [[ta-11-calibration-post-rope-basis]] |

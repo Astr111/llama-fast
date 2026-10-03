@@ -228,13 +228,20 @@ The 700 K corpus was calibrated on the 4B model (**54 m 45 s**, 333 chunks, 333 
 
 **And a negative worth keeping:** with `budget` above the context length the pruner never fires at all — the first attempt used `budget 256` against 222 cells and produced an empty log. An empty log is a configuration fact, not a failure.
 
+## [2026-10-04] fix | resolved TA-8, TA-1 and TA-4 in publication repository
+Implemented and verified three critical TriAttention defects via the BMad build pipeline (`bmad-architecture` + `bmad-build-auto`):
 
+1. **[[ta-8-offset-max-zero-nan]] resolved (Commit `585fe5d`)**:
+   - `src/common/common.h`: updated default `triattention_offset_max = 65536` (17 geometric offsets).
+   - `src/src/llama-triattention.cpp`: added validation guard in `triattention_init` (warns on `n_offsets == 0` and sets `disable_trig = true`).
+   - `src/src/llama-triattention.cpp` & `src/ggml/src/ggml-cuda/triattention-score.cu`: added arithmetic fail-safes in CPU/GPU scoring kernels to strictly avoid division by zero or NaN creation when `n_offsets == 0`.
 
+2. **[[ta-1-wht-inversion-256]] & [[ta-4-cooperative-fwht-race]] resolved (Commit `5a52561`)**:
+   - Located the surviving fix at `/home/ms/llama-fast-dev/Release/src/ggml/src/ggml-cuda/triattention-score.cu`.
+   - Ported dynamic `wht_group` computation (`wht_group = f / 64; full_group = wht_group < padded_hd / 128`) into `NEED_WHT_INV` block, restoring WHT inversion for `head_dim=256` models like `Ternary-Bonsai-2-27B`.
+   - Ported `active` parameter and conditional guards into `cooperative_fwht_128` and `inverse_wht_rotation_128`, preventing warp divergence and shared-memory OOB hazards on Volta sm_70.
+   - Preserved the TA-8 arithmetic fail-safe in the GPU scoring kernel.
 
-
-
-
-
-
-
+3. **Status alignment**:
+   - Updated `state.md`, `issues.md`, and `llmwiki/index.md` to reflect resolutions of TA-1, TA-4, and TA-8, and re-scoping of TQ-1.
 

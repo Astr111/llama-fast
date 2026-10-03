@@ -84,14 +84,14 @@ TriAttention's inventory, from [[source-state-md]] §3 — verified against the 
 
 | Page | Severity | One line |
 | :--- | :--- | :--- |
-| [[ta-1-wht-inversion-256]] | CRITICAL | The scoring kernel skips WHT inversion at `head_dim=256`; triggered by the target model |
+| [[ta-1-wht-inversion-256]] | CRITICAL | **RESOLVED**: scoring kernel skips WHT inversion at `head_dim=256`; fixed via dynamic `wht_group` |
 | [[ta-2-budget-starvation]] | HIGH | Long prefixes starve the budget to zero and eviction collapses to a sliding window |
 | [[ta-3-cpu-fallback-transfers]] | HIGH | Per-cell synchronous D2H copies stall the CPU path for 15–30 s |
-| [[ta-4-cooperative-fwht-race]] | MEDIUM | Shared-memory WHT assumes 64 active threads; UB on Volta |
+| [[ta-4-cooperative-fwht-race]] | MEDIUM | **RESOLVED**: shared-memory WHT assumed 64 active threads; fixed via `active` thread guard |
 | [[ta-5-freq-scale-dead-code]] | MEDIUM | `freq_scale_sq` computes to 1.0 always; the scaling is disabled |
 | [[ta-6-overlap-double-counting]] | LOW | Latent risk for future patches, not a live defect |
 | [[ta-7-config-validation]] | LOW | No guard rails on incompatible `budget`/prefix/window combinations |
-| [[ta-8-offset-max-zero-nan]] | **CRITICAL (new)** | `offset_max` defaults to 0, so every eviction score is NaN in the shipped scripts |
+| [[ta-8-offset-max-zero-nan]] | **CRITICAL (new)** | **RESOLVED**: `offset_max` defaulted to 0; fixed via 65536 default + init guard + kernel fail-safes |
 | [[ta-9-rope-scope-mismatch]] | **HIGH (new)** | The scorer inverts RoPE over 256 dims with the wrong exponent; the model rotates 64 |
 | [[ta-10-prefix-length-global-latch]] | **HIGH (new)** | `prefix_length` is latched per context; the server never resets it, so a longer prompt loses its own middle |
 | [[ta-11-calibration-post-rope-basis]] | **CRITICAL (new)** | The shipped profile records post-RoPE queries; the scorer compares pre-RoPE keys against them |
