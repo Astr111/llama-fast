@@ -38,10 +38,10 @@
 *   **Status:** **RESOLVED (2026-10-04)**. Ported dynamic `wht_group` calculation and `inverse_wht_rotation_128` per 128-element group from `/home/ms/llama-fast-dev/Release/` to `src/ggml/src/ggml-cuda/triattention-score.cu` (Commit `5a52561`).
 
 ### TA-2. [HIGH] Budget Starvation on Long Prefixes
-*   **File:** `src/llama-triattention.cpp` (`triattention_prune_impl`)
-*   **Description:** The formula `decode_budget = budget - n_protected` drops to zero when `prefix_length + divide_length >= budget`. For a 4096 budget and >3500 token system prompts, all historical tokens between the prefix and the 512-token recent window are instantly evicted.
-*   **Impact:** TriAttention degenerates into a pure sliding window. Agent benchmarks lose reasoning context; speculative decoding acceptance rate plummets. GPU/CPU scoring pipelines execute uselessly for `B=0`.
-*   **Status:** Dynamic budget scaling logic was designed during audit but **not applied** per user request. Needs implementation.
+*   **File:** `src/src/llama-triattention.cpp` (`triattention_prune_impl`)
+*   **Description:** The formula `decode_budget = budget - n_protected` dropped to zero when `prefix_length + divide_length >= budget`.
+*   **Impact:** TriAttention previously degenerated into a pure sliding window on long system prompts.
+*   **Status:** **RESOLVED (2026-10-04)**. Implemented dynamic `min_history_budget` in `triattention_prune_impl` guaranteeing a floor of historical tokens during pruning (Commit `f858af6`).
 
 ### TA-3. [HIGH] CPU Fallback Synchronous D2H Transfers
 *   **File:** `src/llama-triattention.cpp` (`triattention_dequant_kv_head`)
@@ -76,6 +76,12 @@
 *   **Description:** `offset_max` defaulted to 0, producing `n_offsets = 0`. Division by zero in CPU/GPU mean aggregation yielded `NaN` for every key's eviction score, violating strict weak ordering in `std::partial_sort` (UB) and making eviction pseudo-random.
 *   **Impact:** Complete corruption of KV cache eviction ordering in default launch configurations.
 *   **Status:** **RESOLVED (2026-10-04)**. Set default `triattention_offset_max = 65536` in `common.h` (generating 17 geometric offsets), added initialization guard in `triattention_init` (warn + fallback to norm scoring if `n_offsets == 0`), and added arithmetic fail-safes in CPU/GPU scoring kernels (Commit `585fe5d`).
+
+### TA-10. [HIGH] `prefix_length` Stale Per-Context Latch
+*   **Files:** `src/src/llama-kv-cache.cpp`
+*   **Description:** `prefix_length` was latched once on the very first prompt batch containing position 0 and never reset when a sequence slot was recycled via `seq_rm(id, -1, -1)`. Subsequent longer prompts had the middle of their prompt incorrectly treated as evictable.
+*   **Impact:** New prompt tokens were evicted during subsequent requests in persistent server environments.
+*   **Status:** **RESOLVED (2026-10-04)**. Reset `prefix_length = 0` on full sequence clear in `seq_rm` and updated `prefix_length` whenever a prompt batch contains position 0 (Commit `f858af6`).
 
 ---
 
@@ -129,8 +135,9 @@
 
 1.  **[DONE] Port WHT Fix (TA-1 & TA-4):** Ported dynamic `wht_group` and `active` guard in `cooperative_fwht_128` from `/home/ms/llama-fast-dev/Release/...` to publication repo (Commit `5a52561`).
 2.  **[DONE] Fix offset_max NaN Bug (TA-8):** Set default `triattention_offset_max = 65536`, added init validation guard, and kernel fail-safes (Commit `585fe5d`).
-3.  **[CLOSED / RE-SCOPED] Implement TurboQuant GEMM (TQ-1):** Not required; turbo KV cache is consumed by fused flash attention kernels (`ggml_cuda_flash_attn_ext`), not `mul_mat`.
-4.  **Refactor InnerQ State (TQ-2, TQ-3):** Move `static` host/device variables out of `turbo-quant.cuh` into proper TU-scoped or context-scoped storage to ensure thread safety and multi-GPU support.
-5.  **Apply TriAttention Budget Scaling (TA-2):** Implement dynamic `min_history_budget` logic in `triattention_prune_impl` to prevent context starvation during long agent runs.
-6.  **Batch CPU Fallback Transfers (TA-3):** Refactor `triattention_dequant_kv_head` to use bulk `cudaMemcpy` instead of per-cell synchronous transfers.
-7.  **Fix RoPE Phase Inversion Scope (TA-9):** Parameterize scorer RoPE inverse by actual model rotation dimension (`n_rot = 64`) rather than assuming full 256 dimensions.
+3.  **[DONE] Resolve Prefix Stale Latch (TA-10):** Dynamic update on prompt pos 0 and clear on `seq_rm` (Commit `f858af6`).
+4.  **[DONE] Apply TriAttention Budget Scaling (TA-2):** Implemented dynamic `min_history_budget` logic in `triattention_prune_impl` to prevent context starvation (Commit `f858af6`).
+5.  **[CLOSED / RE-SCOPED] Implement TurboQuant GEMM (TQ-1):** Not required; turbo KV cache is consumed by fused flash attention kernels (`ggml_cuda_flash_attn_ext`), not `mul_mat`.
+6.  **Refactor InnerQ State (TQ-2, TQ-3):** Move `static` host/device variables out of `turbo-quant.cuh` into proper TU-scoped or context-scoped storage to ensure thread safety and multi-GPU support.
+7.  **Batch CPU Fallback Transfers (TA-3):** Refactor `triattention_dequant_kv_head` to use bulk `cudaMemcpy` instead of per-cell synchronous transfers.
+8.  **Fix RoPE Phase Inversion Scope (TA-9):** Parameterize scorer RoPE inverse by actual model rotation dimension (`n_rot = 64`) rather than assuming full 256 dimensions.

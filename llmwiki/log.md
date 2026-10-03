@@ -245,3 +245,15 @@ Implemented and verified three critical TriAttention defects via the BMad build 
 3. **Status alignment**:
    - Updated `state.md`, `issues.md`, and `llmwiki/index.md` to reflect resolutions of TA-1, TA-4, and TA-8, and re-scoping of TQ-1.
 
+## [2026-10-04] fix | resolved TA-10 and TA-2 in publication repository
+Resolved two high-priority TriAttention issues via the BMad build pipeline (Commit `f858af6`):
+
+1. **[[ta-10-prefix-length-global-latch]] resolved**:
+   - `src/src/llama-kv-cache.cpp`: In `llama_kv_cache::seq_rm`, reset `triattention_state.prefix_length = 0` whenever an entire sequence is cleared (`p0 <= 0 && p1 >= max`).
+   - `src/src/llama-kv-cache.cpp`: In `llama_kv_cache::update_triattention_prefix`, re-evaluate and update `prefix_length` whenever a prompt batch contains position 0 (`pos == 0`), preventing prompt latching across server request boundaries and slot recycling.
+
+2. **[[ta-2-budget-starvation]] resolved**:
+   - `src/src/llama-triattention.cpp`: In `triattention_prune_impl`, introduced a guaranteed minimum history budget `min_history_budget = std::min(n_decode, std::max(budget / 8, 32))` dynamically scaling up to `budget / 4`.
+   - Constrained `effective_prefix_len = std::min(state.prefix_length, budget - recent_window - min_history_budget)`.
+   - Prevents TriAttention from degenerating into a pure sliding window on long system prompts (>3500 tokens), preserving vital reasoning history.
+

@@ -48,7 +48,9 @@ Related paths that inherit the latch: KV-sequence forks (`seq_cp`, `src/tools/se
 
 ## Status
 
-**Open, unlisted, unfixed.** Decided by reading; nothing was built or run ([[build-and-verify]]). **Update (2026-09-29): observed live.** The settling experiment was performed — a serving run on the 4B model reports `prefix=27` in every prune line, identically at positions 96 through 416, while the request keeps generating. The latch holds the first prompt's length and does not follow the context. Run and log on [[first-live-eviction]].
+**RESOLVED (2026-10-04).** Fixed in `src/src/llama-kv-cache.cpp` via commit `f858af6`.
+- `llama_kv_cache::seq_rm` now resets `triattention_st->prefix_length = 0` whenever a sequence is cleared from position 0 (`p0 <= 0 && p1 >= max`).
+- `llama_kv_cache::apply_ubatch` (`cpy_k`) now updates `prefix_length = max_batch_pos + 1` on any prompt batch containing `pos == 0`, allowing subsequent requests with different prompt sizes to establish their own protected prefix.
 
 ## Fix sketch
 

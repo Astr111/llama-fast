@@ -33,7 +33,7 @@ the register — for reading, for triage, and for deciding what to do first.
 | **A1** | **TA-8** — `offset_max = 0` makes every eviction score NaN, in the shipped scripts | CRITICAL | **RESOLVED** | Fixed via commit `585fe5d` (working default 65536 + init guard + kernel fail-safes) |
 | **A2** | **TA-11** — the shipped calibration profile is in the wrong basis | CRITICAL | OPEN | move the capture hook; regenerate the profile |
 | **A3** | **TA-9** — the scorer inverts RoPE over 256 dims with the wrong exponent | HIGH | OPEN | parameterise the inverse by `n_rot` + sections |
-| **A4** | **TA-10** — `prefix_length` latches per context and the server never resets it | HIGH | OBSERVED | make the boundary per-sequence |
+| **A4** | **TA-10** — `prefix_length` latches per context and the server never resets it | HIGH | **RESOLVED** | Fixed via commit `f858af6` (reset on seq_rm and dynamic update on prompt pos 0) |
 | **A5** | **TA-1** — WHT inversion skipped at `head_dim=256` | CRITICAL | **RESOLVED** | Fixed via commit `5a52561` (ported dynamic `wht_group` from Release) |
 | **B1** | **INFRA-1** — `template-instances/` empty → no CUDA build from this tree | INFRA | OPEN | one `unzip` from `llama-fast-src.zip` |
 | **B2** | **INFRA-2** — `ggml-cpu/arch/` empty → x86 SIMD sources absent | INFRA | OPEN | source restoration (not in the archive — see the page) |
@@ -54,7 +54,7 @@ inseparable. A1 is also the gate: with every score NaN, the others cannot even b
 | ID | Sev | Status | One line | Detail |
 | :--- | :--- | :--- | :--- | :--- |
 | TA-1 | CRITICAL | **RESOLVED** | The scoring kernel skipped WHT inversion when `padded_hd == 256`; fixed via dynamic `wht_group` (commit `5a52561`) | [[ta-1-wht-inversion-256]] |
-| TA-2 | HIGH | OBSERVED | Long prefixes starve the budget: protection consumes `prefix + window` and eviction becomes a sliding window | [[ta-2-budget-starvation]] |
+| TA-2 | HIGH | **RESOLVED** | Long prefixes starved the budget; fixed via dynamic `min_history_budget` (commit `f858af6`) | [[ta-2-budget-starvation]] |
 | TA-3 | HIGH | OPEN | CPU fallback does one synchronous D2H copy **per KV cell** — 15–30 s stalls | [[ta-3-cpu-fallback-transfers]] |
 | TA-4 | MEDIUM | **RESOLVED** | `cooperative_fwht_128` assumed 64 active threads; fixed via `active` thread guard (commit `5a52561`) | [[ta-4-cooperative-fwht-race]] |
 | TA-5 | MEDIUM | RE-SCOPED | `freq_scale_sq` is an identity multiply — **not a bug**: the doc's `1/ω²` weighting exists nowhere in `src/` | [[ta-5-freq-scale-dead-code]] |
@@ -81,7 +81,7 @@ inseparable. A1 is also the gate: with every score NaN, the others cannot even b
 | :--- | :--- | :--- | :--- | :--- |
 | **TA-8** | CRITICAL | **RESOLVED** | `offset_max` defaulted to 0 → `n_offsets = 0` → NaN scoring; fixed via commit `585fe5d` (working default 65536 + init guard + kernel fail-safes) | [[ta-8-offset-max-zero-nan]] |
 | **TA-9** | HIGH | OPEN | The scorer builds `omega` from `head_dim` and inverts every pair `(f, f+128)` across all 256 dimensions, while the model rotates `n_rot = 64` with exponent θ^(−2f/**64**). The angle error is θ^(3f/128) — **it grows with frequency**. Not compensated anywhere | [[ta-9-rope-scope-mismatch]] |
-| **TA-10** | HIGH | **OBSERVED** | `prefix_length` is one latch per KV cache, set by the first batch with position 0, reset only by `clear()` — and the server never full-clears (slot recycle is `seq_rm`). A later longer prompt loses its own middle to eviction. Live log: `prefix=27` at every position | [[ta-10-prefix-length-global-latch]] |
+| **TA-10** | HIGH | **RESOLVED** | `prefix_length` was latched once and survived slot recycle; fixed via commit `f858af6` (reset on seq_rm and dynamic update on prompt pos 0) | [[ta-10-prefix-length-global-latch]] |
 | **TA-11** | CRITICAL | OPEN | The calibrator matches the tensor name `Qcur-<layer>`, which in the `qwen35` graph is the **post-RoPE** output, while the scorer deliberately scores **pre-RoPE** keys. The phase term is position-corrupted and the norm understated | [[ta-11-calibration-post-rope-basis]] |
 | **HAZ-1** | HIGH | OPEN | `build_lora_mm()` computes the base product against the rotated activation `cur_mm` while the LoRA branch multiplies the unrotated `cur` — the wrong basis for a Hadamard-folded weight. `[INFERENCE]`, live only if an adapter was not folded | [[loading-and-batching]] |
 | **HAZ-2** | MEDIUM | OPEN | The `[UNK_BYTE_0x…]` detokenisation fallback appends the **whole piece** instead of the offending codepoint, emitting it *k* times in two encodings. **Not reachable for the target model** (`qwen35` keeps `byte_encode = true`); live for `LLAMA_VOCAB_PRE_TYPE_WHITESPACE` models, and **silent** — it corrupts the load-time token cache | [[tokenizer]] |

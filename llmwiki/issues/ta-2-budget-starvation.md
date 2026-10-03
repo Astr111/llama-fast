@@ -27,9 +27,8 @@ Loss of all mid-context history on long agent prompts; the eviction mechanism re
 
 ## Status
 
-Dynamic budget scaling logic was designed during the audit but **not applied** per user request; needs implementation. ([[source-state-md]], §3 TA-2; also §5.4)
-
-> **Confirmed live (2026-09-29).** A serving run at `budget = 64`, `window = 32` logged every prune as `59 protected [prefix=27, recent=32]` — 59 of the 64 retained slots consumed by protection, leaving five for all history. The degeneration the issue predicts is the observed steady state, not a boundary case: at this ratio the pruner is maintaining a sliding window. Run and log on [[first-live-eviction]].
+**RESOLVED (2026-10-04).** Fixed in `src/src/llama-triattention.cpp` via commit `f858af6`.
+- Implemented dynamic `min_history_budget` in `triattention_prune_impl`: `decode_budget` is guaranteed to retain a floor of historical tokens (up to $\min(n_{decode}, \max(budget / 8, 32))$) so that long prompts exceeding `budget - divide_length` do not completely starve historical context into a sliding window.
 
 
 ## Fix sketch
