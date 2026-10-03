@@ -77,6 +77,12 @@
 *   **Impact:** Complete corruption of KV cache eviction ordering in default launch configurations.
 *   **Status:** **RESOLVED (2026-10-04)**. Set default `triattention_offset_max = 65536` in `common.h` (generating 17 geometric offsets), added initialization guard in `triattention_init` (warn + fallback to norm scoring if `n_offsets == 0`), and added arithmetic fail-safes in CPU/GPU scoring kernels (Commit `585fe5d`).
 
+### TA-9. [HIGH] RoPE Scope and Frequency Mismatch in Scorer
+*   **Files:** `src/src/llama-kv-cache.cpp`, `src/src/llama-triattention.h`, `src/src/llama-triattention.cpp`, `src/ggml/include/ggml-cuda.h`, `src/ggml/src/ggml-cuda/triattention-score.cu`
+*   **Description:** The TriAttention scorer previously inverted RoPE over all 256 dimensions with exponent $\theta^{-2f/256}$, whereas the model rotates only $n_{rot} = 64$ dimensions with exponent $\theta^{-2f/64}$, causing growing angular distortion $\theta^{3f/128}$ and erroneous rotation of unrotated dimensions.
+*   **Impact:** Inverted keys differed drastically from true pre-RoPE keys, corrupting trigonometric importance evaluation.
+*   **Status:** **RESOLVED (2026-10-04)**. Dynamic `n_rot` passed from `hparams.n_rot(0)` to `triattention_init`, `omega` computed via `n_rot` with 0.0f padding, and inverse RoPE selectively applied only to channels $f < n_{rot}/2$ in both CPU (`triattention_invert_rope`) and GPU (`triattention_score_kernel`).
+
 ### TA-10. [HIGH] `prefix_length` Stale Per-Context Latch
 *   **Files:** `src/src/llama-kv-cache.cpp`
 *   **Description:** `prefix_length` was latched once on the very first prompt batch containing position 0 and never reset when a sequence slot was recycled via `seq_rm(id, -1, -1)`. Subsequent longer prompts had the middle of their prompt incorrectly treated as evictable.

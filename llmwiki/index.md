@@ -92,7 +92,7 @@ TriAttention's inventory, from [[source-state-md]] §3 — verified against the 
 | [[ta-6-overlap-double-counting]] | LOW | Latent risk for future patches, not a live defect |
 | [[ta-7-config-validation]] | LOW | No guard rails on incompatible `budget`/prefix/window combinations |
 | [[ta-8-offset-max-zero-nan]] | **CRITICAL (new)** | **RESOLVED**: `offset_max` defaulted to 0; fixed via 65536 default + init guard + kernel fail-safes |
-| [[ta-9-rope-scope-mismatch]] | **HIGH (new)** | The scorer inverts RoPE over 256 dims with the wrong exponent; the model rotates 64 |
+| [[ta-9-rope-scope-mismatch]] | **HIGH (new)** | **RESOLVED**: scorer inverted 256 dims with wrong exponent; parameterized with dynamic `n_rot` |
 | [[ta-10-prefix-length-global-latch]] | **HIGH (new)** | **RESOLVED**: `prefix_length` was latched once; fixed via reset on seq_rm and update on pos 0 |
 | [[ta-11-calibration-post-rope-basis]] | **CRITICAL (new)** | The shipped profile records post-RoPE queries; the scorer compares pre-RoPE keys against them |
 

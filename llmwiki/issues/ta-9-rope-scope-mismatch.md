@@ -2,9 +2,9 @@
 title: "TA-9: the scoring kernel inverts RoPE over 256 dims while the model rotates 64"
 type: issue
 status: current
-updated: 2026-09-28
+updated: 2026-10-04
 sources: [state.md, TRIATTENTION.md]
-verified: [src/src/llama-triattention.cpp, src/src/llama-triattention.h, src/src/models/qwen35.cpp, src/src/llama-model.cpp, src/src/llama-model.h, src/src/turbo-rotation-data.h, src/ggml/src/ggml-cuda/triattention-score.cu, src/docs/development/HOWTO-add-model.md, src/docs/TRIATTENTION.md]
+verified: [src/src/llama-triattention.cpp, src/src/llama-triattention.h, src/src/llama-kv-cache.cpp, src/src/models/qwen35.cpp, src/src/llama-model.cpp, src/src/llama-model.h, src/src/turbo-rotation-data.h, src/ggml/include/ggml-cuda.h, src/ggml/src/ggml-cuda/triattention-score.cu, src/docs/development/HOWTO-add-model.md, src/docs/TRIATTENTION.md]
 tags: [triattention, rope, correctness]
 ---
 
@@ -45,7 +45,12 @@ The angle error is not a constant offset: the two exponents differ, so a given f
 
 ## Status
 
-**Open, unlisted, unfixed.** Decided by reading only; nothing was built or run ([[build-and-verify]]). The model-side values (`rope.dimension_count = 64`, sections `[11, 11, 10, 0]`) come from [[ternary-bonsai-2-27b]]'s GGUF read rather than a fresh read of the file on this machine.
+**RESOLVED (2026-10-04)**. Parameterized TriAttention with dynamic `n_rot`:
+1. In `src/src/llama-kv-cache.cpp`, pass `hparams.n_rot(0)` to `triattention_init` (fallback to `head_dim` if 0).
+2. In `src/src/llama-triattention.h` & `src/src/llama-triattention.cpp`, added `n_rot` to `triattention_state` and `triattention_init`.
+3. In `triattention_build_omega`, compute `omega[f] = rope_theta^(-2f / n_rot)` for `f < n_rot / 2`, and 0.0f for `f >= n_rot / 2`.
+4. In `triattention_invert_rope` (CPU) and `triattention_score_kernel` (GPU), only invert RoPE for `f < n_rot / 2`, copying channels `f >= n_rot / 2` as-is.
+5. In `src/ggml/include/ggml-cuda.h` & `src/ggml/src/ggml-cuda/triattention-score.cu`, added `n_rot` to `triattention_gpu_config` and dispatched it to the scoring kernel.
 
 ## Fix sketch
 

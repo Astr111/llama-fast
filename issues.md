@@ -80,7 +80,7 @@ inseparable. A1 is also the gate: with every score NaN, the others cannot even b
 | ID | Sev | Status | One line | Detail |
 | :--- | :--- | :--- | :--- | :--- |
 | **TA-8** | CRITICAL | **RESOLVED** | `offset_max` defaulted to 0 → `n_offsets = 0` → NaN scoring; fixed via commit `585fe5d` (working default 65536 + init guard + kernel fail-safes) | [[ta-8-offset-max-zero-nan]] |
-| **TA-9** | HIGH | OPEN | The scorer builds `omega` from `head_dim` and inverts every pair `(f, f+128)` across all 256 dimensions, while the model rotates `n_rot = 64` with exponent θ^(−2f/**64**). The angle error is θ^(3f/128) — **it grows with frequency**. Not compensated anywhere | [[ta-9-rope-scope-mismatch]] |
+| **TA-9** | HIGH | **RESOLVED** | Scorer inverted 256 dims with exponent θ^(−2f/256) instead of `n_rot=64`; fixed via dynamic `n_rot` injection, matching omega exponent, and selective inversion | [[ta-9-rope-scope-mismatch]] |
 | **TA-10** | HIGH | **RESOLVED** | `prefix_length` was latched once and survived slot recycle; fixed via commit `f858af6` (reset on seq_rm and dynamic update on prompt pos 0) | [[ta-10-prefix-length-global-latch]] |
 | **TA-11** | CRITICAL | OPEN | The calibrator matches the tensor name `Qcur-<layer>`, which in the `qwen35` graph is the **post-RoPE** output, while the scorer deliberately scores **pre-RoPE** keys. The phase term is position-corrupted and the norm understated | [[ta-11-calibration-post-rope-basis]] |
 | **HAZ-1** | HIGH | OPEN | `build_lora_mm()` computes the base product against the rotated activation `cur_mm` while the LoRA branch multiplies the unrotated `cur` — the wrong basis for a Hadamard-folded weight. `[INFERENCE]`, live only if an adapter was not folded | [[loading-and-batching]] |

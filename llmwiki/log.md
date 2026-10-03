@@ -257,3 +257,15 @@ Resolved two high-priority TriAttention issues via the BMad build pipeline (Comm
    - Constrained `effective_prefix_len = std::min(state.prefix_length, budget - recent_window - min_history_budget)`.
    - Prevents TriAttention from degenerating into a pure sliding window on long system prompts (>3500 tokens), preserving vital reasoning history.
 
+## [2026-10-04] fix | resolved TA-9 (RoPE scope and frequency mismatch)
+Resolved defect **[[ta-9-rope-scope-mismatch]]** via the BMad build pipeline:
+1. **Dynamic `n_rot` parameterization**:
+   - `src/src/llama-kv-cache.cpp`: Pass `hparams.n_rot(0)` to `triattention_init` (fallback to `head_dim` when 0).
+   - `src/src/llama-triattention.h` & `src/src/llama-triattention.cpp`: Added `n_rot` to `triattention_state` and `triattention_init`.
+2. **Frequency exponent matching forward pass**:
+   - `src/src/llama-triattention.cpp`: In `triattention_build_omega`, calculate `omega[f] = rope_theta^(-2f / n_rot)` for `f < n_rot / 2`, and 0.0f for `f >= n_rot / 2`.
+3. **Selective inverse rotation scope**:
+   - `src/src/llama-triattention.cpp`: In `triattention_invert_rope`, rotate only `f < n_rot / 2` pairs, copying `f >= n_rot / 2` channels untouched (`dst[f] = src[f]; dst[f + fc] = src[f + fc];`).
+   - `src/ggml/include/ggml-cuda.h` & `src/ggml/src/ggml-cuda/triattention-score.cu`: Added `n_rot` to `triattention_gpu_config`, passed to `triattention_score_kernel`, and guarded Step 3 inverse RoPE by `if (f < (int)(n_rot / 2))`.
+
+
