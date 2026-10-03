@@ -156,10 +156,11 @@ struct triattention_state {
     uint32_t kv_size;             // Total KV cache capacity (from cache init)
 
     // Precomputed arrays (allocated once at init)
-    float *   omega;              // [freq_count]  RoPE frequencies: theta^(-2f/d)
+    float *   omega;              // [freq_count]  RoPE frequencies: theta^(-2f/n_rot)
     float *   freq_scale_sq;      // [freq_count]  frequency scaling^2
     float *   offsets;            // [n_offsets]   geometric {1,2,4,...,offset_max}
     uint32_t  n_offsets;
+    uint32_t  n_rot;              // RoPE dimension count (dims that rotate)
 
     // Per-cell absolute position tracking
     // Critical for correct RoPE inversion after eviction:
@@ -206,13 +207,15 @@ extern "C" {
 //   rope_theta  — model's RoPE theta for validation against calibration
 //   head_dim    — model's attention head dimension for validation
 //   n_kv_heads  — model's number of KV heads for validation
+//   n_rot       — model's rotary dimension count (0 = fallback to head_dim)
 triattention_state * triattention_init(
     const char * stats_path,
     const triattention_config * cfg,
     uint32_t kv_size,
     double   rope_theta,
     uint32_t head_dim,
-    uint32_t n_kv_heads);
+    uint32_t n_kv_heads,
+    uint32_t n_rot = 0);
 
 // Free all memory associated with a TriAttention state.
 // Safe to call with nullptr.
@@ -238,6 +241,7 @@ void triattention_free(triattention_state * state);
 //   head_dim      — full head dimension (freq_count * 2)
 //   freq_count    — head_dim / 2
 //   rope_style    — 0=half, 1=interleaved
+//   n_rot         — rotary dimension count (0 = fallback to head_dim)
 void triattention_invert_rope(
     float       * out,
     const float * post_rope_k,
@@ -246,7 +250,8 @@ void triattention_invert_rope(
     uint32_t n_keys,
     uint32_t head_dim,
     uint32_t freq_count,
-    uint32_t rope_style);
+    uint32_t rope_style,
+    uint32_t n_rot = 0);
 
 // Score cached keys for a single (layer, head) pair.
 // Paper Eqs. 6-10: trigonometric scoring + MLR norm term

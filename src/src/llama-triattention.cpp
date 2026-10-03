@@ -304,12 +304,17 @@ static void triattention_free_calibration(triattention_calibration * cal) {
 // Precomputation at init time
 // ============================================================================
 
-// Build RoPE frequency array: omega[f] = rope_theta^(-2f/head_dim)
+// Build RoPE frequency array: omega[f] = rope_theta^(-2f/n_rot) for f < n_rot/2, else 0
 // Paper Eq. 1: theta_f = base^{-2f/d}
-static void triattention_build_omega(float * omega, uint32_t freq_count, uint32_t head_dim, double rope_theta) {
+static void triattention_build_omega(float * omega, uint32_t freq_count, uint32_t n_rot, double rope_theta) {
+    const uint32_t rot_fc = n_rot / 2;
     for (uint32_t f = 0; f < freq_count; f++) {
-        double exponent = -2.0 * (double)f / (double)head_dim;
-        omega[f] = (float)pow(rope_theta, exponent);
+        if (f < rot_fc && n_rot > 0) {
+            double exponent = -2.0 * (double)f / (double)n_rot;
+            omega[f] = (float)pow(rope_theta, exponent);
+        } else {
+            omega[f] = 0.0f;
+        }
     }
 }
 
@@ -387,8 +392,12 @@ void triattention_invert_rope(
     uint32_t n_keys,
     uint32_t head_dim,
     uint32_t freq_count,
-    uint32_t rope_style)
+    uint32_t rope_style,
+    uint32_t n_rot)
 {
+    const uint32_t effective_rot = (n_rot == 0) ? head_dim : n_rot;
+    const uint32_t rot_fc = effective_rot / 2;
+
     for (uint32_t i = 0; i < n_keys; i++) {
         const float * src = post_rope_k + (size_t)i * head_dim;
         float       * dst = out         + (size_t)i * head_dim;
@@ -397,25 +406,35 @@ void triattention_invert_rope(
         if (rope_style == 0) {
             // Half style: [real_0..real_{fc-1} | imag_0..imag_{fc-1}]
             for (uint32_t f = 0; f < freq_count; f++) {
-                float angle = omega[f] * pos;
-                float c = cosf(angle);
-                float s = sinf(angle);
-                float re = src[f];
-                float im = src[f + freq_count];
-                // Invert rotation: multiply by conjugate rotation matrix
-                dst[f]              = re * c + im * s;
-                dst[f + freq_count] = im * c - re * s;
+                if (f < rot_fc) {
+                    float angle = omega[f] * pos;
+                    float c = cosf(angle);
+                    float s = sinf(angle);
+                    float re = src[f];
+                    float im = src[f + freq_count];
+                    // Invert rotation: multiply by conjugate rotation matrix
+                    dst[f]              = re * c + im * s;
+                    dst[f + freq_count] = im * c - re * s;
+                } else {
+                    dst[f]              = src[f];
+                    dst[f + freq_count] = src[f + freq_count];
+                }
             }
         } else {
             // Interleaved style: [re_0, im_0, re_1, im_1, ...]
             for (uint32_t f = 0; f < freq_count; f++) {
-                float angle = omega[f] * pos;
-                float c = cosf(angle);
-                float s = sinf(angle);
-                float re = src[2 * f];
-                float im = src[2 * f + 1];
-                dst[2 * f]     = re * c + im * s;
-                dst[2 * f + 1] = im * c - re * s;
+                if (f < rot_fc) {
+                    float angle = omega[f] * pos;
+                    float c = cosf(angle);
+                    float s = sinf(angle);
+                    float re = src[2 * f];
+                    float im = src[2 * f + 1];
+                    dst[2 * f]     = re * c + im * s;
+                    dst[2 * f + 1] = im * c - re * s;
+                } else {
+                    dst[2 * f]     = src[2 * f];
+                    dst[2 * f + 1] = src[2 * f + 1];
+                }
             }
         }
     }
@@ -634,7 +653,8 @@ triattention_state * triattention_init(
     uint32_t kv_size,
     double   rope_theta,
     uint32_t head_dim,
-    uint32_t n_kv_heads)
+    uint32_t n_kv_heads,
+    uint32_t n_rot)
 {
     // Load calibration file
     triattention_calibration * cal = triattention_load_calibration(stats_path);
@@ -670,12 +690,13 @@ triattention_state * triattention_init(
     state->kv_size = kv_size;
     state->absolute_position = 0;
     state->prefix_length     = 0;
+    state->n_rot = (n_rot == 0) ? head_dim : n_rot;
 
     const uint32_t fc = cal->freq_count;
 
     // Build precomputed arrays
     state->omega = new float[fc];
-    triattention_build_omega(state->omega, fc, head_dim, rope_theta);
+    triattention_build_omega(state->omega, fc, state->n_rot, rope_theta);
 
     state->freq_scale_sq = new float[fc];
     triattention_build_freq_scale_sq(state->freq_scale_sq, state->omega, fc);
@@ -901,6 +922,7 @@ static void triattention_init_gpu(triattention_state * state, ggml_type k_type) 
     gcfg.n_kv_heads   = cal->num_kv_heads;
     gcfg.n_sampled    = cal->n_sampled;
     gcfg.n_offsets    = state->n_offsets;
+    gcfg.n_rot        = state->n_rot;
     gcfg.k_type       = k_type;
     gcfg.need_wht_inv = (k_type == GGML_TYPE_TURBO2_0 || k_type == GGML_TYPE_TURBO3_0);
     gcfg.disable_trig = cfg.disable_trig;
@@ -1301,7 +1323,8 @@ int32_t triattention_prune_impl(
                 n_decode,
                 padded_hd,
                 fc,
-                cal->rope_style);
+                cal->rope_style,
+                state->n_rot);
 
             // 3c. Score keys
             triattention_score_keys(

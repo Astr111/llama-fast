@@ -197,6 +197,7 @@ static __global__ void triattention_score_kernel(
     const float  * __restrict__ q_mean_abs,      // [freq_count]
     const float  * __restrict__ extra_weight,    // [freq_count]
     const uint32_t              freq_count,
+    const uint32_t              n_rot,
     const int                   agg_mode)        // 0=mean, 1=max
 {
     const int cell_idx_local = blockIdx.x;  // which cell we're scoring
@@ -230,7 +231,8 @@ static __global__ void triattention_score_kernel(
     // K is stored post-RoPE. To get pre-RoPE K, apply RoPE^{-1}.
     // In "half" layout: k_re = K[f], k_im = K[f + freq_count]
     // RoPE^{-1}: multiply by rotation(-θ) where θ = omega[f] * position
-    {
+    // For dimensions outside n_rot (f >= n_rot / 2), no rotation was performed in forward pass.
+    if (f < (int)(n_rot / 2)) {
         const int32_t pos = positions[cell_idx_local];
         const float w = omega[f];
         const float theta = w * (float)pos;
@@ -359,7 +361,7 @@ static void launch_score_kernel(
             scores_out, k_data, n_embd_k_gqa, row_bytes, head_off, hd, \
             cell_indices, positions, n_cells, round_start, \
             state->d_omega, state->d_freq_scale_sq, state->d_offsets, cfg.n_offsets, \
-            qmr, qmi, qma, ew, fc, agg_mode)
+            qmr, qmi, qma, ew, fc, cfg.n_rot, agg_mode)
 
     if (cfg.disable_trig) {
         switch (cfg.k_type) {

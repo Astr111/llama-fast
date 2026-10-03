@@ -59,6 +59,7 @@ struct triattention_gpu_config {
     uint32_t n_kv_heads;
     uint32_t n_sampled;
     uint32_t n_offsets;
+    uint32_t n_rot;
     enum ggml_type k_type;
     bool     need_wht_inv;
     bool     disable_trig;

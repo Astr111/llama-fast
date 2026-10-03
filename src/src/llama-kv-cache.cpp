@@ -3010,8 +3010,9 @@ void llama_kv_cache::init_triattention(const char * stats_path, const triattenti
     const double rope_theta = (double)hparams.rope_freq_base_train;
     const uint32_t head_dim = hparams.n_embd_head_k(0);
     const uint32_t n_kv_heads = hparams.n_head_kv(0);
+    const uint32_t n_rot = hparams.n_rot(0);
 
-    triattention_st = triattention_init(stats_path, cfg, kv_size, rope_theta, head_dim, n_kv_heads);
+    triattention_st = triattention_init(stats_path, cfg, kv_size, rope_theta, head_dim, n_kv_heads, n_rot);
     if (!triattention_st) {
         LLAMA_LOG_ERROR("%s: failed to initialize TriAttention from %s\n", __func__, stats_path);
     }
