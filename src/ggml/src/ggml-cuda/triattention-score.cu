@@ -275,7 +275,10 @@ static __global__ void triattention_score_kernel(
 
         const float ew = extra_weight[f] * fscale_sq * k_mag;
 
-        if (agg_mode == 1) {
+        if (n_offsets == 0) {
+            // Fail-safe: norm-only score if no offsets are configured
+            total_score = ew;
+        } else if (agg_mode == 1) {
             // Max aggregation over offsets
             float max_score = -1e30f;
             for (uint32_t d = 0; d < n_offsets; d++) {

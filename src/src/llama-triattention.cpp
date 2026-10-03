@@ -447,7 +447,8 @@ void triattention_score_keys(
     enum triattention_agg agg,
     bool disable_trig)
 {
-    const float inv_n_offsets = 1.0f / (float)n_offsets;
+    const float inv_n_offsets = (n_offsets > 0) ? (1.0f / (float)n_offsets) : 0.0f;
+    const bool use_trig = (!disable_trig && n_offsets > 0);
 
     for (uint32_t i = 0; i < n_keys; i++) {
         const float * k = pre_rope_k + (size_t)i * head_dim;
@@ -460,7 +461,7 @@ void triattention_score_keys(
 
         float total_score = 0.0f;
 
-        if (!disable_trig) {
+        if (use_trig) {
             // Full scoring: trigonometric + norm terms
             for (uint32_t d = 0; d < n_offsets; d++) {
                 float delta = base_delta + offsets[d];
@@ -502,7 +503,7 @@ void triattention_score_keys(
                 total_score *= inv_n_offsets;
             }
         } else {
-            // Ablation: norm-only scoring (disable_trig=true)
+            // Ablation or fail-safe (n_offsets == 0): norm-only scoring
             // Only the position-independent norm term
             for (uint32_t f = 0; f < freq_count; f++) {
                 float k_re = k[f];
@@ -682,6 +683,11 @@ triattention_state * triattention_init(
     // Geometric offsets — max 17 elements for offset_max=65536
     state->offsets = new float[32];  // generous allocation
     state->n_offsets = triattention_build_offsets(state->offsets, cfg->offset_max);
+    if (state->n_offsets == 0 && !cfg->disable_trig && cfg->budget > 0) {
+        fprintf(stderr, "%s: [TriAttention] WARNING: offset_max=%d produced 0 offsets; falling back to norm-only scoring (disable_trig=true) to prevent NaN\n",
+                __func__, cfg->offset_max);
+        cfg->disable_trig = true;
+    }
 
     // Precompute derived head stats
     for (uint32_t h = 0; h < cal->n_sampled; h++) {

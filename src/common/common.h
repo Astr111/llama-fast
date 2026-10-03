@@ -752,7 +752,7 @@ struct common_params {
     int32_t     triattention_budget          = 0;        // max KV entries to retain after pruning
     int32_t     triattention_divide_length   = 0;        // pruning interval in tokens
     int32_t     triattention_window          = 0;        // alias for divide_length
-    int32_t     triattention_offset_max      = 0;        // max geometric offset for scoring
+    int32_t     triattention_offset_max      = 65536;    // max geometric offset for scoring (default 65536: 17 geometric offsets)
     int32_t     triattention_mode            = 0;        // 0=global, 1=per-kv-head, 2=per-layer-head
     int32_t     triattention_trigger         = 0;        // 0=interval, 1=slack
     int32_t     triattention_agg             = 0;        // 0=mean, 1=max
