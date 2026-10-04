@@ -24,8 +24,7 @@ __pycache__/
 *$py.class
 
 # LLM Wiki
-llmwiki/
-llm-wiki/
+# llm-wiki/
 llmwiki.txt
 
 # Agent scaffolding & instructions
