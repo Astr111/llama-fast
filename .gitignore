@@ -1,6 +1,7 @@
 build/
 *.tar.xz
 llama-fast-src.zip
+/scripts/
 
 # build output
 src/build-x64-linux-gcc-debug/
