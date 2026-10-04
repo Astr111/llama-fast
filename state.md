@@ -1,7 +1,9 @@
 # Project State: llama-fast (Custom llama.cpp Inference Engine)
 
 **Date:** 2026-09-28
-**Hardware Target:** Tesla V100-SXM2-16GB (Volta sm_70, 900 GB/s HBM2, no INT Tensor Cores)
+**Engine:** Universal — builds and runs on any CUDA-capable GPU (`sm_61` through `sm_90`); no V100-specific code paths exist.
+**Profiling Target:** Tesla V100-SXM2-16GB (Volta sm_70, 900 GB/s HBM2, no INT Tensor Cores) — benchmarks in `README.md` were measured there.
+**Development Machine:** GTX 1660 (`sm_75`) — no V100 available in this environment (see **INFRA-3** in §4 of `issues.md`). Code changes are authored and reviewed here; profiling and hardware-specific measurements require a separate machine with the target GPU.
 **OS / Stack:** Ubuntu 22.04 LTS, CUDA 12.4
 **Models:**
 *   **Target:** `Ternary-Bonsai-2-27B-PQ2_0.gguf` (`head_dim=256`)

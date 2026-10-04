@@ -37,7 +37,7 @@ the register — for reading, for triage, and for deciding what to do first.
 | **A5** | **TA-1** — WHT inversion skipped at `head_dim=256` | CRITICAL | **RESOLVED** | Fixed via commit `5a52561` (ported dynamic `wht_group` from Release) |
 | **B1** | **INFRA-1** — `template-instances/` empty → no CUDA build from this tree | INFRA | OPEN | one `unzip` from `llama-fast-src.zip` |
 | **B2** | **INFRA-2** — `ggml-cpu/arch/` empty → x86 SIMD sources absent | INFRA | OPEN | source restoration (not in the archive — see the page) |
-| **B3** | **INFRA-3** — no CUDA toolkit on this machine; attached GPU is `sm_75`, not the target `sm_70` | INFRA | BLOCKED | different machine |
+| **B3** | **INFRA-3** — engine is universal; dev machine is `sm_75` (GTX 1660), no CUDA toolkit; V100 `sm_70` profiling requires a separate machine | INFRA | BLOCKED | separate machine for profiling |
 | **B4** | **INFRA-4** — no quality metric exists anywhere in the project | INFRA | OPEN | install a harness (docker is present) |
 | **C1** | **HAZ-1** — `build_lora_mm()` multiplies the LoRA branch in the unrotated basis while the base product uses the rotated one | HIGH | OPEN | fold the adapter, or rotate its input |
 
@@ -97,7 +97,7 @@ inseparable. A1 is also the gate: with every score NaN, the others cannot even b
 | :--- | :--- | :--- | :--- | :--- |
 | **INFRA-1** | INFRA | OPEN | `src/ggml/src/ggml-cuda/template-instances/` is **empty** while `CMakeLists.txt:106-116` globs it; 138 `.cu` files exist only in `llama-fast-src.zip`. A CUDA build from this tree cannot instantiate its kernels | [[build-and-verify]], [[codebase-map]] |
 | **INFRA-2** | INFRA | OPEN | `src/ggml/src/ggml-cpu/arch/` is **empty** while `CMakeLists.txt:243-244` lists `arch/x86/quants.c` and `arch/x86/repack.cpp` for x86. A **second** empty-but-referenced directory — this is the shape of how the repo was published, not a one-off | [[build-and-verify]], [[cpu-path]] |
-| **INFRA-3** | INFRA | BLOCKED | No CUDA toolkit on this machine (`nvcc`, `cuobjdump`, `ptxas` all absent) and the attached GPU is a **GTX 1660, `sm_75`** — not the V100 `sm_70` the project targets. The tree's only configure record is CPU-only | [[build-and-verify]], [[v100-sxm2]] |
+| **INFRA-3** | INFRA | BLOCKED | The engine is **universal** (runs on any CUDA `sm_61`–`sm_90` GPU). However, the development machine has a GTX 1660 (`sm_75`) and no CUDA toolkit (`nvcc`, `cuobjdump`, `ptxas` all absent). Target-hardware profiling (V100 `sm_70`) and Nsight measurements require a separate machine. Code authoring, review, and static analysis are unaffected | [[build-and-verify]], [[v100-sxm2]] |
 | **INFRA-4** | INFRA | OPEN | **No quality metric exists in the project at all** — while `tools/perplexity`, `tools/imatrix` and `tools/tuning` sit in the tree and docker runs. Four confirmed quality-affecting defects have no instrument behind them | [[documentation-coverage]], [[terminal-bench-subset]] |
 | **INFRA-5** | INFRA | OPEN | `build/cuda124.zip`'s `libggml-cuda.so` shows **only `sm_86` markers** while its own README advertises `sm_61;sm_70;sm_75;sm_80;sm_86`. The bundle labelled for Volta is the one that cannot be confirmed for Volta | [[v100-sxm2]], [[release-artifacts]] |
 | **INFRA-6** | INFRA | OPEN | `build/cuda13.zip` and `build/cuda124.zip` are **LZMA-compressed**; `unzip` extracts nothing from them and **reports success**. `llama-bench` is absent from both bundles | [[release-artifacts]], [[llama-bench]] |
