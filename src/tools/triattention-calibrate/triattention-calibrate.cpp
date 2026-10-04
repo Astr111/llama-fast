@@ -39,11 +39,19 @@ private:
     std::vector<float>   m_f32_buf;
 };
 
-static bool parse_qcur_layer(const char * name, int32_t & il) {
+static bool parse_qcur_layer(const char * name, int32_t & il, bool & is_normed) {
     if (!name) return false;
-    const char * p = strstr(name, "Qcur-");
-    if (!p) return false;
-    p += 5;
+    is_normed = false;
+    // Prefer explicit pre-RoPE normalized tensor for Qwen/Bonsai architectures (TA-11)
+    const char * p = strstr(name, "Qcur_normed-");
+    if (p) {
+        is_normed = true;
+        p += 12;
+    } else {
+        p = strstr(name, "Qcur-");
+        if (!p) return false;
+        p += 5;
+    }
     char * end = nullptr;
     long val = strtol(p, &end, 10);
     if (end == p) return false;
@@ -53,7 +61,13 @@ static bool parse_qcur_layer(const char * name, int32_t & il) {
 
 bool triattention_collector::collect(struct ggml_tensor * t, bool ask) {
     int32_t il = -1;
-    if (!parse_qcur_layer(t->name, il)) {
+    bool is_normed = false;
+    if (!parse_qcur_layer(t->name, il, is_normed)) {
+        return false;
+    }
+
+    // Reject post-RoPE tensors (TA-11: TriAttention requires pre-RoPE Q centers)
+    if (t->op == GGML_OP_ROPE) {
         return false;
     }
 
@@ -306,7 +320,14 @@ int main(int argc, char ** argv) {
     const uint32_t version     = TRIATTENTION_VERSION; // 1
     const uint32_t rope_style  = 0;                    // 0 = half
     const uint32_t n_sampled   = (uint32_t)sampled_pairs.size();
-    const char *   model_name  = "Bonsai-2-27B-PQ2_0";
+    char model_name_buf[128] = {0};
+    if (llama_model_meta_val_str(model, "general.name", model_name_buf, sizeof(model_name_buf)) <= 0) {
+        llama_model_desc(model, model_name_buf, sizeof(model_name_buf));
+    }
+    if (model_name_buf[0] == '\0') {
+        strncpy(model_name_buf, "Bonsai-2-27B-PQ2_0", sizeof(model_name_buf) - 1);
+    }
+    const char *   model_name  = model_name_buf;
     const uint32_t name_len    = (uint32_t)strlen(model_name) + 1;
 
     fwrite(&magic,          sizeof(uint32_t), 1, f);

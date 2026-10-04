@@ -707,7 +707,7 @@ triattention_state * triattention_init(
     if (state->n_offsets == 0 && !cfg->disable_trig && cfg->budget > 0) {
         fprintf(stderr, "%s: [TriAttention] WARNING: offset_max=%d produced 0 offsets; falling back to norm-only scoring (disable_trig=true) to prevent NaN\n",
                 __func__, cfg->offset_max);
-        cfg->disable_trig = true;
+        state->cfg.disable_trig = true;
     }
 
     // Precompute derived head stats

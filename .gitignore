@@ -2,9 +2,10 @@ build/
 *.tar.xz
 llama-fast-src.zip
 /scripts/
+calibration_corpus*.txt
 
 # build output
-src/build-x64-linux-gcc-debug/
+src/build*/
 
 # editor / harness local state
 .vscode/
