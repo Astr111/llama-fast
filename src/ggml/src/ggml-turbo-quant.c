@@ -10,10 +10,17 @@
 #include "ggml-common.h"
 #include "ggml-impl.h"
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
 #include <math.h>
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* Global: WHT group size for CPU quantize path (set by CPU SET_ROWS handler) */
 int turbo3_cpu_wht_group_size = 0;
