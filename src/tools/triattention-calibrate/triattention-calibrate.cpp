@@ -227,14 +227,26 @@ int main(int argc, char ** argv) {
     const uint32_t n_embd         = (uint32_t)llama_model_n_embd(model);
     uint32_t head_dim             = (num_attn_heads > 0) ? (n_embd / num_attn_heads) : 128;
 
-    double rope_theta = 10000000.0;
-    char rope_buf[64] = {0};
-    if (llama_model_meta_val_str(model, "qwen35.rope.freq_base", rope_buf, sizeof(rope_buf)) > 0 ||
-        llama_model_meta_val_str(model, "rope.freq_base", rope_buf, sizeof(rope_buf)) > 0) {
-        double parsed = atof(rope_buf);
-        if (parsed > 0.0) {
-            rope_theta = parsed;
+    double rope_theta = (double)llama_model_rope_freq_base_train(model);
+    if (rope_theta <= 0.0) {
+        char rope_buf[64] = {0};
+        char arch_buf[64] = {0};
+        char arch_key[128] = {0};
+        if (llama_model_meta_val_str(model, "general.architecture", arch_buf, sizeof(arch_buf)) > 0) {
+            snprintf(arch_key, sizeof(arch_key), "%s.rope.freq_base", arch_buf);
         }
+        if ((arch_key[0] != '\0' && llama_model_meta_val_str(model, arch_key, rope_buf, sizeof(rope_buf)) > 0) ||
+            llama_model_meta_val_str(model, "qwen35.rope.freq_base", rope_buf, sizeof(rope_buf)) > 0 ||
+            llama_model_meta_val_str(model, "qwen3.rope.freq_base",  rope_buf, sizeof(rope_buf)) > 0 ||
+            llama_model_meta_val_str(model, "rope.freq_base",        rope_buf, sizeof(rope_buf)) > 0) {
+            double parsed = atof(rope_buf);
+            if (parsed > 0.0) {
+                rope_theta = parsed;
+            }
+        }
+    }
+    if (rope_theta <= 0.0) {
+        rope_theta = 10000.0;
     }
 
     g_collector.expected_n_head   = num_attn_heads;

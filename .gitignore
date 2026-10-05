@@ -44,3 +44,12 @@ _bmad-output/
 # Agent state & task tracking
 state.md
 issues.md
+
+# Benchmark scripts and test logs
+run_*.py
+test_*.py
+*.log
+benchmarks/
+
+# Release distributions and artifacts
+dist/

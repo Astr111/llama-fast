@@ -604,6 +604,9 @@ extern "C" {
     // Get the model's RoPE frequency scaling factor
     LLAMA_API float llama_model_rope_freq_scale_train(const struct llama_model * model);
 
+    // Get the model's RoPE base frequency
+    LLAMA_API float llama_model_rope_freq_base_train(const struct llama_model * model);
+
     // Returns the number of classifier outputs (only valid for classifier models)
     // Undefined behavior for non-classifier models
     LLAMA_API uint32_t llama_model_n_cls_out(const struct llama_model * model);

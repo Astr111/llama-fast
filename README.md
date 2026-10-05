@@ -21,81 +21,75 @@ This work integrates and optimizes methods from the following upstream open-sour
 
 ---
 
-## Release Directory Structure
+### Release Directory Structure (v1.0.1)
 
 ```text
-Release/
-├── src/                                  # Clean fork source code (no build artifacts, no .git)
+dist/v1.0.1/
+├── llama-fast-v1.0.1-bin-cuda13.tar.gz    # Universal Fat Binary archive (CUDA 13.x / Driver >= 550)
+├── llama-fast-v1.0.1-bin-cuda12.4.tar.gz  # Standalone archive with CUDA 12.4 runtime libs
+├── SHA256SUMS.txt                        # Checksums
 │
-├── calibration/                          # Subdirectory with calibration profiles
-│   └── bonsai-27b.triattention           # TriAttention calibration profile for Ternary-Bonsai-2-27B (772 KB)
+├── cuda13/                               # Unpacked CUDA 13 release
+│   ├── llama-server, llama-cli, llama-triattention-calibrate
+│   ├── run-server.sh, run-cli.sh
+│   └── calibration/bonsai-4b.triattention
 │
-├── scripts/                              # Production launch & CLI scripts
-│   ├── start_server_turbo.sh             # Launch server with TurboQuant + TriAttention (customizable)
-│   ├── start_server_baseline.sh          # Launch server in pure baseline mode (FP16 KV)
-│   └── run_cli.sh                        # Interactive CLI chat / text completion
-│
-├── build/                                # Precompiled production binaries
-│   ├── cuda13/                           # Universal Fat Binary (CUDA 13.x: sm_75..sm_120)
-│   │   ├── bin/                          # llama-server, llama-cli, llama-triattention-calibrate, tests
-│   │   ├── lib/cuda/                     # Standalone CUDA 13 runtime (cudart, cublas, cublasLt)
-│   │   ├── calibration/                  # Local copy of calibration file
-│   │   ├── start_server.sh               # Local launch script
-│   │   └── run_cli.sh                    # Local CLI chat
-│   │
-│   └── cuda12.4/                         # Legacy Release (CUDA 12.4: sm_61..sm_86)
-│       ├── bin/                          # llama-server, llama-cli, llama-triattention-calibrate, tests
-│       ├── lib/cuda/                     # Standalone CUDA 12.4 runtime (cudart, cublas, cublasLt)
-│       ├── calibration/                  # Local copy of calibration file
-│       ├── start_server.sh               # Local launch script
-│       └── run_cli.sh                    # Local CLI chat
-│ 
-├── llama-fast-src.zip                    # Clean source code ZIP archive (~37.5 MB)
-└── README.md                             # Release documentation and guide
+└── cuda12.4/                             # Unpacked CUDA 12.4 release
+    ├── llama-server, llama-cli, llama-triattention-calibrate
+    ├── run-server.sh, run-cli.sh
+    ├── libcudart, libcublas, libcublasLt, libnccl
+    └── calibration/bonsai-4b.triattention
 ```
 
 ---
 
 ## GPU Compatibility Matrix
 
-| Build Folder | Target Architectures | Supported GPUs | Min. NVIDIA Driver |
+| Build | Target Architectures | Supported GPUs | Min. NVIDIA Driver |
 | :--- | :--- | :--- | :--- |
-| **`build/cuda13/`** *(Universal Fat Binary)* | `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100`, `sm_120` | • **Turing**: GTX 1650/1660, RTX 2060–2080 Ti, T4<br>• **Ampere**: RTX 3050–3090, A10, A40, A100<br>• **Ada Lovelace**: RTX 4060–4090, L4, L40<br>• **Hopper**: H100, H200<br>• **Blackwell**: RTX 50xx, B100, B200 | `>= 550.x` |
-| **`build/cuda12.4/`** *(Legacy Release)* | `sm_61`, `sm_70`, `sm_75`, `sm_80`, `sm_86` | • **Pascal**: GTX 1060–1080 Ti, Tesla P40, P100<br>• **Volta**: Titan V, Tesla V100<br>• **Turing**: GTX 16xx, RTX 20xx<br>• **Ampere**: RTX 30xx, A100 | `>= 525.x` |
+| **CUDA 13.x** *(Fat Binary)* | `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100`, `sm_120` | • **Turing**: GTX 1650/1660, RTX 2060–2080 Ti, T4<br>• **Ampere**: RTX 3050–3090, A10, A40, A100<br>• **Ada Lovelace**: RTX 4060–4090, L4, L40<br>• **Hopper**: H100, H200<br>• **Blackwell**: RTX 50xx, B100, B200 | `>= 550.x` |
+| **CUDA 12.4** *(Legacy / Container)* | `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90` | • **Turing**: GTX 16xx, RTX 20xx, T4<br>• **Ampere**: RTX 30xx, A100<br>• **Ada / Hopper**: RTX 40xx, H100 | `>= 525.x` |
 
 ---
 
 ## Quick Start Guide
 
-### 1. Launch Server (Default Speed-Optimized Profile):
+### 1. Launch Server via Runner Script:
 ```bash
-cd Release
-./start_server.sh /path/to/Ternary-Bonsai-2-27B-PQ2_0.gguf
+./dist/v1.0.1/cuda13/run-server.sh \
+  -m /path/to/Ternary-Bonsai-4B-Q2_0_g64.gguf \
+  -ngl 99 \
+  -c 32768 \
+  -np 1 \
+  -ctk q8_0 \
+  -ctv turbo3 \
+  --chat-template chatml \
+  --logit-bias 151657-inf,151658-inf \
+  --no-cache-prompt \
+  --triattention-stats calibration/bonsai-4b.triattention \
+  --triattention-budget 2048 \
+  --triattention-window 512 \
+  --triattention-offset-max 4096 \
+  --triattention-normalize \
+  --triattention-protect-prefill \
+  --port 8080 \
+  --host 127.0.0.1
 ```
 
-### 2. Switching Inference Profiles:
-
-```bash
-# SPEED PROFILE (Recommended for autonomous coding / reasoning agents)
-# K=turbo3, V=q8_0: eliminates 64 inverse WHT kernels per token, 68 tok/s, concise CoT
-CTK=turbo3 CTV=q8_0 ./start_server.sh /path/to/model.gguf
-
-# MAXIMUM VRAM COMPRESSION PROFILE (For long context 32K–64K or high concurrency)
-# K=turbo3, V=turbo2: ~25,200 tokens per 1 GB VRAM, 7.9 GB VRAM at 16K ctx
-CTK=turbo3 CTV=turbo2 ./start_server.sh /path/to/model.gguf
-
-# PURE BASELINE PROFILE (100% backward compatible, no TriAttention)
-DISABLE_TRIATTENTION=1 ./start_server.sh /path/to/model.gguf
+### 2. Launch on Windows via WSL2 (.bat):
+If you are on Windows, you can launch the server directly using the included batch file:
+```cmd
+run-server-wsl.bat -m C:\Models\Ternary-Bonsai-4B-Q2_0_g64.gguf -ngl 99 -c 32768
 ```
+*(Or double-click `run-server-wsl.bat` to run with default recommended parameters).*
 
-### 3. Launch from Architecture-Specific Subdirectories:
-```bash
-# Run with CUDA 13.x:
-cd Release/build/cuda13 && ./start_server.sh /path/to/model.gguf
-
-# Run with CUDA 12.4:
-cd Release/build/cuda12.4 && ./start_server.sh /path/to/model.gguf
-```
+### 3. Recommended Production Options Explained:
+- `-ctk q8_0 -ctv turbo3` — optimal speed & high quality on long context (or `-ctk turbo3 -ctv turbo3` / `-ctk turbo3 -ctv turbo2` for maximal VRAM savings).
+- `--chat-template chatml` — ensures clean conversational output without unsolicited tool calling tags.
+- `--logit-bias 151657-inf,151658-inf` — suppresses tool tokens (`<tool_call>`, `</tool_call>`) preventing garbage outputs.
+- `--no-cache-prompt` — avoids prompt prefix caching collisions on repeated requests.
+- `--triattention-budget 2048` & `--triattention-window 512` — bounds attention decoding computation while maintaining 100% long-context accuracy.
+- `--triattention-protect-prefill` — locks the system prompt & instructions in KV cache.
 
 ---
 
@@ -106,20 +100,21 @@ cd Release/build/cuda12.4 && ./start_server.sh /path/to/model.gguf
 | Argument | Allowed Values | Description |
 | :--- | :--- | :--- |
 | `-ctk, --cache-type-k TYPE` | `turbo3`, `turbo2`, `turbo4`, `q8_0`, `q4_0`, `f16`, `f32` | Format of Key cache. `turbo3` applies Polar WHT rotation and 3-bit quantization. |
-| `-ctv, --cache-type-v TYPE` | `q8_0`, `turbo2`, `turbo3`, `turbo4`, `f16`, `f32` | Format of Value cache. Use `q8_0` for maximum decode speed (bypasses inverse WHT) or `turbo2` for maximum memory compression. |
+| `-ctv, --cache-type-v TYPE` | `q8_0`, `turbo2`, `turbo3`, `turbo4`, `f16`, `f32` | Format of Value cache. Use `q8_0` for maximum decode speed (bypasses inverse WHT) or `turbo3`/`turbo2` for maximum memory compression. |
 
 ### 2. TriAttention Pruning Arguments
 
 | Argument | Default | Description |
 | :--- | :--- | :--- |
 | `--triattention-stats PATH` | `""` | Path to precomputed `.triattention` calibration file. Activates adaptive KV pruning. |
-| `--triattention-budget N` | `0` | Target KV cache budget. When cache exceeds this budget, low-importance keys are pruned. Recommended: `2048`–`4096`. |
-| `--triattention-window, --triattention-divide-length N` | `0` | Pruning check interval in generated tokens. Recommended: `512` (halves GPU kernel launch frequency vs `256`). |
+| `--triattention-budget N` | `0` | Target KV cache budget. When cache exceeds this budget, low-importance keys are pruned. Recommended: `1024`–`4096`. |
+| `--triattention-window, --triattention-divide-length N` | `0` | Pruning check interval in generated tokens. Recommended: `512`. |
 | `--triattention-protect-prefill` | `true` | Prevents eviction of initial system prompt / user instruction tokens. |
 | `--triattention-no-protect-prefill` | — | Disables prompt token protection. |
 | `--triattention-mode MODE` | `global` | Pruning scope: `global` (across all heads/layers), `per-kv-head`, or `per-layer-head`. |
 | `--triattention-agg MODE` | `mean` | Score aggregation across query heads: `mean` or `max`. |
 | `--triattention-normalize` | `true` | Z-score normalization of scores across heads before selection. |
+| `--triattention-offset-max N` | `0` | Maximum RoPE offset frequency bins to consider (recommended: `4096`). |
 | `--triattention-log` | `false` | Outputs detailed pruning diagnostics and token retention stats to stderr. |
 
 ### 3. Engine & Concurrency Environment Variables
@@ -133,67 +128,47 @@ cd Release/build/cuda12.4 && ./start_server.sh /path/to/model.gguf
 
 ## Optimized Production Command Examples
 
-### Example 1: Direct `llama-server` Command (High-Speed Agent Profile)
-Recommended for coding, terminal reasoning, and interactive agents. Uses 3-bit K, 8-bit V (0 inverse WHT overhead), window 512, budget 4096:
+### Example 1: Direct `llama-server` Command (Ternary Bonsai 4B / Qwen3)
+Recommended launch configuration for chat, agent reasoning, and 32k context:
 
 ```bash
-export LD_LIBRARY_PATH="Release/build/cuda13/bin:Release/build/cuda13/lib/cuda:$LD_LIBRARY_PATH"
-export GGML_CUDA_GRAPH_OPT=1
-
-Release/build/cuda13/bin/llama-server \
-  -m /path/to/Ternary-Bonsai-2-27B-PQ2_0.gguf \
-  --mmproj /path/to/mmproj-Qwen3.8-27B-BF16.gguf \
-  --no-mmproj-offload \
-  -ngl 99 \
-  -c 16384 \
-  -ctk turbo3 \
-  -ctv q8_0 \
-  --triattention-stats Release/calibration/bonsai-27b.triattention \
-  --triattention-budget 4096 \
-  --triattention-window 512 \
-  --triattention-protect-prefill \
-  --host 127.0.0.1 \
-  --port 8080
-```
-
-### Example 2: Direct `llama-server` Command (Maximum VRAM Compression Profile)
-Runs long context (32K–64K) or multiple concurrent sessions with ~25,200 tokens per 1 GB VRAM:
-
-```bash
-export LD_LIBRARY_PATH="Release/build/cuda13/bin:Release/build/cuda13/lib/cuda:$LD_LIBRARY_PATH"
-export GGML_CUDA_GRAPH_OPT=1
-
-Release/build/cuda13/bin/llama-server \
-  -m /path/to/Ternary-Bonsai-2-27B-PQ2_0.gguf \
+./dist/v1.0.1/cuda13/run-server.sh \
+  -m /path/to/Ternary-Bonsai-4B-Q2_0_g64.gguf \
   -ngl 99 \
   -c 32768 \
-  -ctk turbo3 \
-  -ctv turbo2 \
-  --triattention-stats Release/calibration/bonsai-27b.triattention \
-  --triattention-budget 4096 \
-  --triattention-window 512 \
-  --triattention-protect-prefill \
-  --host 0.0.0.0 \
-  --port 8080
-```
-
-### Example 3: Interactive CLI Generation (`llama-cli`)
-One-shot question or interactive conversation with speed optimizations:
-
-```bash
-export LD_LIBRARY_PATH="Release/build/cuda13/bin:Release/build/cuda13/lib/cuda:$LD_LIBRARY_PATH"
-export GGML_CUDA_GRAPH_OPT=1
-
-Release/build/cuda13/bin/llama-cli \
-  -m /path/to/Ternary-Bonsai-2-27B-PQ2_0.gguf \
-  -ngl 99 \
-  -c 8192 \
-  -ctk turbo3 \
-  -ctv q8_0 \
-  --triattention-stats Release/calibration/bonsai-27b.triattention \
+  -np 1 \
+  -ctk q8_0 \
+  -ctv turbo3 \
+  --chat-template chatml \
+  --logit-bias 151657-inf,151658-inf \
+  --no-cache-prompt \
+  --triattention-stats calibration/bonsai-4b.triattention \
   --triattention-budget 2048 \
   --triattention-window 512 \
-  -p "Explain why polar Walsh-Hadamard transform improves KV cache quantization:"
+  --triattention-offset-max 4096 \
+  --triattention-normalize \
+  --triattention-protect-prefill \
+  --port 8080 \
+  --host 127.0.0.1
+```
+
+### Example 2: Interactive CLI Generation (`llama-cli`)
+One-shot generation or terminal testing:
+
+```bash
+./dist/v1.0.1/cuda13/run-cli.sh \
+  -m /path/to/Ternary-Bonsai-4B-Q2_0_g64.gguf \
+  -ngl 99 \
+  -c 16384 \
+  -ctk q8_0 \
+  -ctv turbo3 \
+  --chat-template chatml \
+  --logit-bias 151657-inf,151658-inf \
+  --triattention-stats calibration/bonsai-4b.triattention \
+  --triattention-budget 2048 \
+  --triattention-window 512 \
+  --triattention-protect-prefill \
+  -p "Explain the mathematical intuition behind Polar Walsh-Hadamard Transform in TurboQuant:"
 ```
 
 ### Example 4: TriAttention Offline Calibration
