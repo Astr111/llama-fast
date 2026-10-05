@@ -25,20 +25,14 @@ This work integrates and optimizes methods from the following upstream open-sour
 
 ```text
 dist/v1.0.1/
-├── llama-fast-v1.0.1-bin-cuda13.tar.gz    # Universal Fat Binary archive (CUDA 13.x / Driver >= 550)
-├── llama-fast-v1.0.1-bin-cuda12.4.tar.gz  # Standalone archive with CUDA 12.4 runtime libs
-├── SHA256SUMS.txt                        # Checksums
+├── llama-fast-v1.0.1-bin-cuda13-lite.tar.gz   # Universal Fat Binary Lite (220 MB, relies on host CUDA 13)
+├── llama-fast-v1.0.1-bin-cuda12.4-lite.tar.gz # CUDA 12.4 Lite (398 MB, relies on host CUDA 12.4)
+├── llama-fast-v1.0.1-bin-cuda13.tar.gz        # Universal Fat Binary (219 MB)
+├── llama-fast-v1.0.1-bin-cuda12.4.tar.gz      # Standalone Fat Binary (2.0 GB, with bundled CUDA 12.4 runtime)
+├── SHA256SUMS.txt                            # Checksums
 │
-├── cuda13/                               # Unpacked CUDA 13 release
-│   ├── llama-server, llama-cli, llama-triattention-calibrate
-│   ├── run-server.sh, run-cli.sh
-│   └── calibration/bonsai-4b.triattention
-│
-└── cuda12.4/                             # Unpacked CUDA 12.4 release
-    ├── llama-server, llama-cli, llama-triattention-calibrate
-    ├── run-server.sh, run-cli.sh
-    ├── libcudart, libcublas, libcublasLt, libnccl
-    └── calibration/bonsai-4b.triattention
+├── cuda13-lite/ / cuda13/                    # Unpacked CUDA 13 binaries & runners
+└── cuda12.4-lite/ / cuda12.4/                # Unpacked CUDA 12.4 binaries & runners
 ```
 
 ---
