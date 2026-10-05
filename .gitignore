@@ -53,3 +53,7 @@ benchmarks/
 
 # Release distributions and artifacts
 dist/
+
+# Windows local build scripts
+build-windows-*.bat
+build-win*/

@@ -88,13 +88,7 @@ run-server-wsl.bat -m C:\Models\Ternary-Bonsai-4B-Q2_0_g64.gguf -ngl 99 -c 32768
 ```
 *(Or double-click `run-server-wsl.bat` to run with default recommended parameters).*
 
-### 4. Native Windows Build for RTX 5060 / 5060 Ti (Blackwell `sm_120`):
-To build native Windows binaries on a Windows machine with VS 2022 and CUDA 12.8+/13.x:
-```cmd
-build-windows-rtx5060.bat
-```
-
-### 5. Recommended Production Options Explained:
+### 4. Recommended Production Options Explained:
 - `-ctk q8_0 -ctv turbo3` — optimal speed & high quality on long context (or `-ctk turbo3 -ctv turbo3` / `-ctk turbo3 -ctv turbo2` for maximal VRAM savings).
 - `--chat-template chatml` — ensures clean conversational output without unsolicited tool calling tags.
 - `--logit-bias 151657-inf,151658-inf` — suppresses tool tokens (`<tool_call>`, `</tool_call>`) preventing garbage outputs.
