@@ -6,13 +6,14 @@
  * GGML_TYPE_TURBO4_0 (4-bit) for use as --cache-type-k turboN in llama-server.
  */
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include "ggml-quants.h"
 #include "ggml-common.h"
 #include "ggml-impl.h"
 
-#ifndef _USE_MATH_DEFINES
-#define _USE_MATH_DEFINES
-#endif
 #include <math.h>
 #include <string.h>
 #include <assert.h>
