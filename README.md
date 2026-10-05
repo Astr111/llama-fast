@@ -58,7 +58,6 @@ dist/v1.0.1/
   -ctk q8_0 \
   -ctv turbo3 \
   --chat-template chatml \
-  --logit-bias 151657-inf,151658-inf \
   --no-cache-prompt \
   --triattention-stats calibration/bonsai-4b.triattention \
   --triattention-budget 2048 \
@@ -90,8 +89,7 @@ run-server-wsl.bat -m C:\Models\Ternary-Bonsai-4B-Q2_0_g64.gguf -ngl 99 -c 32768
 
 ### 4. Recommended Production Options Explained:
 - `-ctk q8_0 -ctv turbo3` — optimal speed & high quality on long context (or `-ctk turbo3 -ctv turbo3` / `-ctk turbo3 -ctv turbo2` for maximal VRAM savings).
-- `--chat-template chatml` — ensures clean conversational output without unsolicited tool calling tags.
-- `--logit-bias 151657-inf,151658-inf` — suppresses tool tokens (`<tool_call>`, `</tool_call>`) preventing garbage outputs.
+- `--chat-template chatml` — ensures clean conversational output formatting.
 - `--no-cache-prompt` — avoids prompt prefix caching collisions on repeated requests.
 - `--triattention-budget 2048` & `--triattention-window 512` — bounds attention decoding computation while maintaining 100% long-context accuracy.
 - `--triattention-protect-prefill` — locks the system prompt & instructions in KV cache.
@@ -145,7 +143,6 @@ Recommended launch configuration for chat, agent reasoning, and 32k context:
   -ctk q8_0 \
   -ctv turbo3 \
   --chat-template chatml \
-  --logit-bias 151657-inf,151658-inf \
   --no-cache-prompt \
   --triattention-stats calibration/bonsai-4b.triattention \
   --triattention-budget 2048 \
@@ -168,7 +165,6 @@ One-shot generation or terminal testing:
   -ctk q8_0 \
   -ctv turbo3 \
   --chat-template chatml \
-  --logit-bias 151657-inf,151658-inf \
   --triattention-stats calibration/bonsai-4b.triattention \
   --triattention-budget 2048 \
   --triattention-window 512 \

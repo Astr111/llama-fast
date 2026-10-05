@@ -57,3 +57,4 @@ dist/
 # Windows local build scripts
 build-windows-*.bat
 build-win*/
+calibrate-*.bat
