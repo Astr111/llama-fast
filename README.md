@@ -21,31 +21,6 @@ This work integrates and optimizes methods from the following upstream open-sour
 
 ---
 
-### Release Directory Structure (v1.0.1)
-
-```text
-dist/v1.0.1/
-├── llama-fast-v1.0.1-bin-cuda13-lite.tar.gz   # Universal Fat Binary Lite (220 MB, relies on host CUDA 13)
-├── llama-fast-v1.0.1-bin-cuda12.4-lite.tar.gz # CUDA 12.4 Lite (398 MB, relies on host CUDA 12.4)
-├── llama-fast-v1.0.1-bin-cuda13.tar.gz        # Universal Fat Binary (219 MB)
-├── llama-fast-v1.0.1-bin-cuda12.4.tar.gz      # Standalone Fat Binary (2.0 GB, with bundled CUDA 12.4 runtime)
-├── SHA256SUMS.txt                            # Checksums
-│
-├── cuda13-lite/ / cuda13/                    # Unpacked CUDA 13 binaries & runners
-└── cuda12.4-lite/ / cuda12.4/                # Unpacked CUDA 12.4 binaries & runners
-```
-
----
-
-## GPU Compatibility Matrix
-
-| Build | Target Architectures | Supported GPUs | Min. NVIDIA Driver |
-| :--- | :--- | :--- | :--- |
-| **CUDA 13.x** *(Fat Binary)* | `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90`, `sm_100`, `sm_120` | • **Turing**: GTX 1650/1660, RTX 2060–2080 Ti, T4<br>• **Ampere**: RTX 3050–3090, A10, A40, A100<br>• **Ada Lovelace**: RTX 4060–4090, L4, L40<br>• **Hopper**: H100, H200<br>• **Blackwell**: RTX 50xx, B100, B200 | `>= 550.x` |
-| **CUDA 12.4** *(Legacy / Container)* | `sm_75`, `sm_80`, `sm_86`, `sm_89`, `sm_90` | • **Turing**: GTX 16xx, RTX 20xx, T4<br>• **Ampere**: RTX 30xx, A100<br>• **Ada / Hopper**: RTX 40xx, H100 | `>= 525.x` |
-
----
-
 ## Quick Start Guide
 
 ### 1. Launch Server via Runner Script:
@@ -83,24 +58,6 @@ If you use Lite archives, ensure the host CUDA libraries are in your `LD_LIBRARY
 export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH
 ./dist/v1.0.1/cuda12.4-lite/run-server.sh -m /path/to/model.gguf ...
 ```
-
-### 3. Launch on Windows via WSL2 (.bat):
-If you are on Windows, you can launch the server directly using the included batch file:
-```cmd
-run-server-wsl.bat -m C:\Models\Ternary-Bonsai-4B-Q2_0_g64.gguf -ngl 99 -c 32768
-```
-*(Or double-click `run-server-wsl.bat` to run with default recommended parameters).*
-
-### 4. Recommended Production Options Explained:
-- `-ctk turbo3 -ctv turbo2` — optimal speed (75.9 tok/s) & high quality on long context with maximal VRAM savings.
-- `--model-draft models/Qwen3.8-27B-DFlash2-Q4_K_M.gguf` — lightweight 1.1 GB speculative drafter yielding +21% speedup over Q8_0.
-- `--chat-template chatml` — ensures clean conversational output formatting.
-- `--no-cache-prompt` — avoids prompt prefix caching collisions on repeated requests.
-- `--triattention-budget 2048` & `--triattention-window 768` — bounds attention decoding computation while maintaining 100% long-context accuracy.
-- `--triattention-protect-prefill` — locks the system prompt & instructions in KV cache.
-- `--reasoning-budget 4096` & `--reasoning-budget-message` — guarantees deterministic thought-budget capping with medium reasoning effort.
-
----
 
 ## Optimal Pareto-Front Configuration (Ternary-Bonsai-2-27B + DFlash2)
 
@@ -142,7 +99,7 @@ Achieves **~71.5 – 76.0 tokens/sec** with zero CPU offloading :
 | **Drafter VRAM Usage** | ~2.0 GB | **~1.1 GB** | **-900 MB VRAM savings** |
 
 
-### Pareto Trade-off Profiles (Q4_K_M Drafter):
+### Trade-off Profiles (Q4_K_M Drafter):
 1. **Ultra Speed & High Quality (Top 1):** `-ctk turbo3 -ctv turbo2 --triattention-budget 2048 --triattention-window 768 --spec-draft-n-max 4 --spec-draft-p-min 0.445` (**75.92 TPS**, 100% Acc)
 2. **Balanced Precision Profile:** `-ctk turbo3 -ctv turbo3 --triattention-budget 2048 --triattention-window 512 --spec-draft-n-max 4 --spec-draft-p-min 0.328` (**73.72 TPS**, 100% Acc)
 3. **Deep Attention Window:** `-ctk turbo3 -ctv turbo3 --triattention-budget 3584 --triattention-window 1024 --spec-draft-n-max 3 --spec-draft-p-min 0.458` (**72.78 TPS**, 100% Acc)
@@ -183,7 +140,7 @@ Achieves **~71.5 – 76.0 tokens/sec** with zero CPU offloading :
 
 ---
 
-## Optimized Production Command Examples
+## Optimized Command Examples
 
 ### Example 1: Direct `llama-server` Command (Ternary Bonsai 4B / Qwen3)
 Recommended launch configuration for chat, agent reasoning, and 32k context:
@@ -233,21 +190,7 @@ One-shot generation or terminal testing:
   --chat-template-kwargs '{"reasoning_effort":"medium"}' \
   -p "Explain the mathematical intuition behind Polar Walsh-Hadamard Transform in TurboQuant:"
 ```
-
-### Example 4: TriAttention Offline Calibration
-To generate a new `.triattention` calibration profile from an arbitrary text corpus:
-
-```bash
-Release/build/cuda13/bin/llama-triattention-calibrate \
-  -m /path/to/model.gguf \
-  --triattention-calibrate corpus.txt \
-  --triattention-calibrate-out my_model.triattention \
-  -ngl 99 \
-  -c 8192
-```
-
 ---
-
 
 ## Tests Results
 
@@ -263,16 +206,3 @@ Tested on **NVIDIA GeForce RTX 3090 (24GB)** with **Pi Agent** with model **Tern
 | **Peak Decode Speed** | **68.68 tok/s** | **68.04 tok/s** | **67.68 tok/s** |
 
 ---
-
-## Native Compilation from Source (`Release/src`)
-
-To build natively from `Release/src/` or unpack `llama-fast-src.zip`:
-```bash
-cd Release/src
-cmake -B build \
-  -DGGML_CUDA=ON \
-  -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;100;120" \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target llama-server llama-cli llama-triattention-calibrate -j$(nproc)
-```
-
