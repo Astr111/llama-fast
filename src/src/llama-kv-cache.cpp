@@ -3085,6 +3085,10 @@ bool llama_kv_cache::has_triattention() const {
     return triattention_st != nullptr;
 }
 
+int64_t llama_kv_cache::get_triattention_safe_prefix() const {
+    return triattention_get_safe_prefix(triattention_st);
+}
+
 //
 // llama_kv_cache_context
 //

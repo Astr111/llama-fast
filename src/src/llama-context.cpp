@@ -4406,6 +4406,26 @@ int32_t llama_triattention_init(
     return kv->has_triattention() ? 0 : -1;
 }
 
+int64_t llama_triattention_get_safe_prefix(struct llama_context * ctx) {
+    if (!ctx) {
+        return -1;
+    }
+    auto * mem = ctx->get_memory();
+    if (!mem) {
+        return -1;
+    }
+    auto * kv = dynamic_cast<llama_kv_cache *>(mem);
+    if (!kv) {
+        if (auto * hyb = dynamic_cast<llama_memory_hybrid *>(mem)) {
+            kv = hyb->get_mem_attn();
+        }
+    }
+    if (!kv) {
+        return -1;
+    }
+    return kv->get_triattention_safe_prefix();
+}
+
 // llama state API
 
 // deprecated

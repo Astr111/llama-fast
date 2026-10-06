@@ -1534,3 +1534,20 @@ void triattention_print_stats(const triattention_state * state, FILE * stream) {
     fprintf(stream, "  Current position:     %lld\n", (long long)state->absolute_position);
     fprintf(stream, "===============================\n\n");
 }
+
+int64_t triattention_get_safe_prefix(const triattention_state * state) {
+    if (!state) {
+        return -1;
+    }
+    // If no tokens have been evicted, cache is fully intact and continuous
+    if (state->total_tokens_evicted == 0) {
+        return -1;
+    }
+    // Eviction has occurred. If prefix protection is enabled, the prefix
+    // tokens [0, prefix_length) are guaranteed intact.
+    if (state->cfg.protect_prefill && state->prefix_length > 0) {
+        return state->prefix_length;
+    }
+    // If prefill was not protected or prefix_length is 0, no safe reusable prefix exists.
+    return 0;
+}

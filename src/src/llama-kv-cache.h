@@ -263,6 +263,9 @@ public:
     // Check if TriAttention is active on this cache.
     bool has_triattention() const;
 
+    // Get the safe prefix boundary for prompt cache reuse (-1 if not active or unpruned).
+    int64_t get_triattention_safe_prefix() const;
+
 private:
     const llama_model & model;
     const llama_hparams & hparams;

@@ -1518,7 +1518,11 @@ private:
                 }
 
                 // fraction of the Longest Common Prefix length with respect to the input prompt length
-                const size_t lcp_len = tokens.get_common_prefix(task.tokens);
+                size_t lcp_len = tokens.get_common_prefix(task.tokens);
+                const int64_t tri_safe_prefix = llama_triattention_get_safe_prefix(slot.ctx_tgt);
+                if (tri_safe_prefix >= 0 && lcp_len > (size_t)tri_safe_prefix) {
+                    lcp_len = (size_t)tri_safe_prefix;
+                }
                 const float f_sim_cur = float(lcp_len) / task.tokens.size();
 
                 SLT_TRC(slot, " - checking sim = %.3f (%zu/%zu) > %.3f\n", f_sim_cur, lcp_len, task.tokens.size(), slot_prompt_similarity);
@@ -3132,6 +3136,12 @@ private:
                                 // reuse any previously computed tokens that are common with the new prompt
                                 n_past = slot.prompt.tokens.get_common_prefix(input_tokens);
 
+                                const int64_t tri_safe_prefix = llama_triattention_get_safe_prefix(ctx_tgt);
+                                if (tri_safe_prefix >= 0 && (int64_t)n_past > tri_safe_prefix) {
+                                    SLT_DBG(slot, "capping n_past from %d to TriAttention safe prefix %" PRId64 "\n", n_past, tri_safe_prefix);
+                                    n_past = tri_safe_prefix;
+                                }
+
                                 // if there is an alora invoked, don't cache after the invocation start
                                 if (slot.alora_invocation_start > 0) {
                                     SLT_DBG(slot, "only caching to alora invocation start (n_past = %d, alora_invocation_start = %d)\n", n_past, slot.alora_invocation_start);
@@ -3142,6 +3152,7 @@ private:
 
                                 const bool can_cache_reuse =
                                     llama_memory_can_shift(llama_get_memory(ctx_tgt)) &&
+                                    (tri_safe_prefix < 0) &&
                                     !slot.prompt.tokens.has_mtmd;
 
                                 if (!can_cache_reuse && n_cache_reuse > 0) {

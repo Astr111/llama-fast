@@ -370,6 +370,12 @@ void triattention_print_stats(
     const triattention_state * state,
     FILE * stream);
 
+// Get the safe prefix length for prompt cache reuse.
+// Returns state->prefix_length if TriAttention has evicted tokens;
+// returns -1 if state is null or no tokens were evicted.
+int64_t triattention_get_safe_prefix(
+    const triattention_state * state);
+
 #ifdef __cplusplus
 }
 #endif

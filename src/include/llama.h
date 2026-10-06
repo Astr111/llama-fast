@@ -843,7 +843,13 @@ extern "C" {
                             bool   disable_trig,
                             bool   enable_logging);
 
+    // Returns the safe prefix length for prompt cache reuse if TriAttention is enabled
+    // and pruning has occurred (or if TriAttention protects prefill). Returns -1 if
+    // TriAttention is not enabled or no pruning has occurred.
+    LLAMA_API int64_t llama_triattention_get_safe_prefix(struct llama_context * ctx);
+
     //
+
     // State / sessions
     //
 
