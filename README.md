@@ -65,6 +65,10 @@ dist/v1.0.1/
   --triattention-offset-max 4096 \
   --triattention-normalize \
   --triattention-protect-prefill \
+  --reasoning-preserve \
+  --reasoning-budget 4096 \
+  --reasoning-budget-message "\n[Thinking limit reached. Moving to final response]\n" \
+  --chat-template-kwargs '{"reasoning_effort":"medium"}' \
   --port 8080 \
   --host 127.0.0.1
 ```
@@ -88,11 +92,61 @@ run-server-wsl.bat -m C:\Models\Ternary-Bonsai-4B-Q2_0_g64.gguf -ngl 99 -c 32768
 *(Or double-click `run-server-wsl.bat` to run with default recommended parameters).*
 
 ### 4. Recommended Production Options Explained:
-- `-ctk q8_0 -ctv turbo3` — optimal speed & high quality on long context (or `-ctk turbo3 -ctv turbo3` / `-ctk turbo3 -ctv turbo2` for maximal VRAM savings).
+- `-ctk turbo3 -ctv turbo2` — optimal speed (75.9 tok/s) & high quality on long context with maximal VRAM savings.
+- `--model-draft models/Qwen3.8-27B-DFlash2-Q4_K_M.gguf` — lightweight 1.1 GB speculative drafter yielding +21% speedup over Q8_0.
 - `--chat-template chatml` — ensures clean conversational output formatting.
 - `--no-cache-prompt` — avoids prompt prefix caching collisions on repeated requests.
-- `--triattention-budget 2048` & `--triattention-window 512` — bounds attention decoding computation while maintaining 100% long-context accuracy.
+- `--triattention-budget 2048` & `--triattention-window 768` — bounds attention decoding computation while maintaining 100% long-context accuracy.
 - `--triattention-protect-prefill` — locks the system prompt & instructions in KV cache.
+- `--reasoning-budget 4096` & `--reasoning-budget-message` — guarantees deterministic thought-budget capping with medium reasoning effort.
+
+---
+
+## Optimal Pareto-Front Configuration (Ternary-Bonsai-2-27B + DFlash2)
+
+Multi-objective Bayesian Optimization (qLogNEHVI BoTorch, 25 iterations across 7 parameters on Tesla V100 16GB) identified the following optimal Pareto-frontier configurations balancing **Generation Speed (TPS)**, **Deep Logic / Code Accuracy**, and **Long-Context Retrieval (Semantic NIAH)**:
+
+### Best Config
+Achieves **~71.5 – 76.0 tokens/sec** with zero CPU offloading :
+
+```bash
+./llama-server \
+  -m models/Ternary-Bonsai-2-27B-PQ2_0.gguf \
+  --model-draft models/Qwen3.8-27B-DFlash2-Q4_K_M.gguf \
+  --spec-type draft-dflash \
+  --spec-draft-ngl 99 \
+  --spec-draft-n-max 4 \
+  --spec-draft-p-min 0.445 \
+  -ngl 99 \
+  -ctk turbo3 \
+  -ctv turbo2 \
+  --triattention-stats bonsai-27b.triattention \
+  --triattention-budget 2048 \
+  --triattention-window 768 \
+  --triattention-offset-max 2048 \
+  --triattention-normalize \
+  --triattention-agg max \
+  --triattention-protect-prefill \
+  --reasoning-preserve \
+  --reasoning-budget 4096 \
+  --reasoning-budget-message "\n[Thinking limit reached. Moving to final response]\n" \
+  --chat-template-kwargs '{"reasoning_effort":"medium"}' \
+  --no-cache-prompt \
+  --port 8080 --host 0.0.0.0
+```
+
+### Benchmark Metrics:
+| Metric | Q8_0 Drafter | Q4_K_M Drafter (New) | Note |
+| :--- | :---: | :---: | :--- |
+| **Generation Speed** | 58.82 – 64.7 tok/s | **71.54 – 75.92 tok/s** | **+17.3% to +21.6% faster** decode speed |
+| **Drafter VRAM Usage** | ~2.0 GB | **~1.1 GB** | **-900 MB VRAM savings** |
+
+
+### Pareto Trade-off Profiles (Q4_K_M Drafter):
+1. **Ultra Speed & High Quality (Top 1):** `-ctk turbo3 -ctv turbo2 --triattention-budget 2048 --triattention-window 768 --spec-draft-n-max 4 --spec-draft-p-min 0.445` (**75.92 TPS**, 100% Acc)
+2. **Balanced Precision Profile:** `-ctk turbo3 -ctv turbo3 --triattention-budget 2048 --triattention-window 512 --spec-draft-n-max 4 --spec-draft-p-min 0.328` (**73.72 TPS**, 100% Acc)
+3. **Deep Attention Window:** `-ctk turbo3 -ctv turbo3 --triattention-budget 3584 --triattention-window 1024 --spec-draft-n-max 3 --spec-draft-p-min 0.458` (**72.78 TPS**, 100% Acc)
+4. **Conservative High-Precision:** `-ctk turbo4 -ctv turbo3 --triattention-budget 2048 --triattention-window 256 --spec-draft-n-max 4 --spec-draft-p-min 0.25` (**73.94 TPS**, 100% Acc)
 
 ---
 
@@ -150,6 +204,10 @@ Recommended launch configuration for chat, agent reasoning, and 32k context:
   --triattention-offset-max 4096 \
   --triattention-normalize \
   --triattention-protect-prefill \
+  --reasoning-preserve \
+  --reasoning-budget 4096 \
+  --reasoning-budget-message "\n[Thinking limit reached. Moving to final response]\n" \
+  --chat-template-kwargs '{"reasoning_effort":"medium"}' \
   --port 8080 \
   --host 127.0.0.1
 ```
@@ -169,6 +227,10 @@ One-shot generation or terminal testing:
   --triattention-budget 2048 \
   --triattention-window 512 \
   --triattention-protect-prefill \
+  --reasoning-preserve \
+  --reasoning-budget 4096 \
+  --reasoning-budget-message "\n[Thinking limit reached. Moving to final response]\n" \
+  --chat-template-kwargs '{"reasoning_effort":"medium"}' \
   -p "Explain the mathematical intuition behind Polar Walsh-Hadamard Transform in TurboQuant:"
 ```
 

@@ -129,7 +129,7 @@ static __device__ void dequant_head_to_smem(
         smem[el0] = (float)x[blk0].qs[off0] * __half2float(x[blk0].d);
         smem[el1] = (float)x[blk1].qs[off1] * __half2float(x[blk1].d);
     } else if constexpr (K_TYPE == GGML_TYPE_TURBO4_0) {
-        // turbo4: block_size=128, dequant includes rotation → no need for WHT inv
+        // turbo4: block_size=128, dequant unpacks scaled centroids (WHT rotation is inverted in Step 2)
         const block_turbo4_0 * x = (const block_turbo4_0 *)k_row_ptr;
         const int blk = (tid * 2) / QK_TURBO4;
         const int off = (tid * 2) % QK_TURBO4;
@@ -367,7 +367,7 @@ static void launch_score_kernel(
         switch (cfg.k_type) {
             case GGML_TYPE_TURBO2_0: LAUNCH_KERNEL(GGML_TYPE_TURBO2_0, true,  true); break;
             case GGML_TYPE_TURBO3_0: LAUNCH_KERNEL(GGML_TYPE_TURBO3_0, true,  true); break;
-            case GGML_TYPE_TURBO4_0: LAUNCH_KERNEL(GGML_TYPE_TURBO4_0, false, true); break;
+            case GGML_TYPE_TURBO4_0: LAUNCH_KERNEL(GGML_TYPE_TURBO4_0, true,  true); break;
             case GGML_TYPE_Q8_0:     LAUNCH_KERNEL(GGML_TYPE_Q8_0,     false, true); break;
             case GGML_TYPE_F16:      LAUNCH_KERNEL(GGML_TYPE_F16,      false, true); break;
             case GGML_TYPE_F32:      LAUNCH_KERNEL(GGML_TYPE_F32,      false, true); break;
@@ -379,7 +379,7 @@ static void launch_score_kernel(
         switch (cfg.k_type) {
             case GGML_TYPE_TURBO2_0: LAUNCH_KERNEL(GGML_TYPE_TURBO2_0, true,  false); break;
             case GGML_TYPE_TURBO3_0: LAUNCH_KERNEL(GGML_TYPE_TURBO3_0, true,  false); break;
-            case GGML_TYPE_TURBO4_0: LAUNCH_KERNEL(GGML_TYPE_TURBO4_0, false, false); break;
+            case GGML_TYPE_TURBO4_0: LAUNCH_KERNEL(GGML_TYPE_TURBO4_0, true,  false); break;
             case GGML_TYPE_Q8_0:     LAUNCH_KERNEL(GGML_TYPE_Q8_0,     false, false); break;
             case GGML_TYPE_F16:      LAUNCH_KERNEL(GGML_TYPE_F16,      false, false); break;
             case GGML_TYPE_F32:      LAUNCH_KERNEL(GGML_TYPE_F32,      false, false); break;

@@ -924,7 +924,7 @@ static void triattention_init_gpu(triattention_state * state, ggml_type k_type) 
     gcfg.n_offsets    = state->n_offsets;
     gcfg.n_rot        = state->n_rot;
     gcfg.k_type       = k_type;
-    gcfg.need_wht_inv = (k_type == GGML_TYPE_TURBO2_0 || k_type == GGML_TYPE_TURBO3_0);
+    gcfg.need_wht_inv = (k_type == GGML_TYPE_TURBO2_0 || k_type == GGML_TYPE_TURBO3_0 || k_type == GGML_TYPE_TURBO4_0);
     gcfg.disable_trig = cfg.disable_trig;
 
     std::vector<triattention_gpu_head_calib> gcalibs(cal->n_sampled);

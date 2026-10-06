@@ -1,4 +1,7 @@
 build/
+build*/
+**/build/
+**/build*/
 *.tar.xz
 llama-fast-src.zip
 /scripts/
@@ -6,6 +9,13 @@ calibration_corpus*.txt
 
 # build output
 src/build*/
+build-*/
+build-linux-cu124-lite/
+build-linux-cu124-lite
+build-linux-cu124-v100/
+build-linux-cu124-v100
+Release/build/
+Release/build*/
 
 # editor / harness local state
 .vscode/
@@ -45,14 +55,20 @@ _bmad-output/
 state.md
 issues.md
 
-# Benchmark scripts and test logs
-run_*.py
-test_*.py
+# Benchmark scripts, scratch tools and test logs
+*.py
+*.json
+pareto_results*.json
 *.log
 benchmarks/
 
 # Release distributions and artifacts
 dist/
+
+# Local build scripts and directories
+build-*.sh
+build-*/
+.ccache/
 
 # Windows local build scripts
 build-windows-*.bat
