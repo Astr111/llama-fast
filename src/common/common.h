@@ -329,6 +329,9 @@ struct common_params_speculative_draft {
     float p_split = 0.1f; // speculative decoding split probability
     float p_min   = 0.0f; // minimum speculative decoding probability (greedy)
 
+    int32_t max_rejections = 0; // circuit breaker: max consecutive draft rejections before cooldown (0=disabled)
+    int32_t cooldown_steps = 0; // number of steps to bypass draft after circuit breaker trips
+
     bool backend_sampling = true; // offload draft sampling to the backend (default: on)
 
     common_params_model mparams;

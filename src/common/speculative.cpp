@@ -2957,6 +2957,12 @@ struct common_speculative {
 
     // which implementaion was used for a given seq_id
     std::vector<common_speculative_impl *> impl_last;
+
+    // circuit breaker config and state per sequence
+    int32_t max_rejections = 0;
+    int32_t cooldown_steps = 0;
+    std::vector<int32_t> n_rejections;
+    std::vector<int32_t> n_cooldown;
 };
 
 static common_ngram_map get_common_ngram_map(
@@ -3412,10 +3418,19 @@ common_speculative * common_speculative_init(common_params_speculative & params,
     }
 
     auto * result = new common_speculative {
-        /* .dparams   = */ common_speculative_draft_params_vec(n_seq),
-        /* .impls     = */ std::move(impls),
-        /* .impl_last = */ std::vector<common_speculative_impl *>(n_seq, nullptr)
+        /* .dparams      = */ common_speculative_draft_params_vec(n_seq),
+        /* .impls        = */ std::move(impls),
+        /* .impl_last    = */ std::vector<common_speculative_impl *>(n_seq, nullptr),
+        /* .max_rejections = */ params.draft.max_rejections,
+        /* .cooldown_steps = */ params.draft.cooldown_steps > 0 ? params.draft.cooldown_steps : 3,
+        /* .n_rejections = */ std::vector<int32_t>(n_seq, 0),
+        /* .n_cooldown   = */ std::vector<int32_t>(n_seq, 0)
     };
+
+    if (result->max_rejections > 0) {
+        LOG_INF("%s: circuit breaker enabled: max_rejections=%d, cooldown_steps=%d\n",
+                __func__, result->max_rejections, result->cooldown_steps);
+    }
 
     return result;
 }
@@ -3473,8 +3488,18 @@ void common_speculative_draft(common_speculative * spec) {
     {
         int n_drafting = 0;
 
-        for (auto & dp : dparams) {
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) dparams.size(); ++seq_id) {
+            auto & dp = dparams[seq_id];
             GGML_ASSERT(!dp.drafting || dp.result->empty());
+
+            // If circuit breaker cooldown is active, skip drafting and let target model decode directly
+            if (spec->max_rejections > 0 && spec->n_cooldown[seq_id] > 0) {
+                spec->n_cooldown[seq_id]--;
+                SPC_DBG("seq_id %d in draft cooldown, %d steps remaining; bypassing draft\n",
+                        seq_id, spec->n_cooldown[seq_id]);
+                dp.drafting = false;
+                continue;
+            }
 
             if (dp.drafting) {
                 n_drafting++;
@@ -3570,6 +3595,22 @@ void common_speculative_accept(common_speculative * spec, llama_seq_id seq_id, u
         if (n_accepted > 0) {
             impl->n_acc_drafts++;
             impl->n_acc_tokens += n_accepted;
+
+            // Reset rejection counter on successful draft acceptance
+            if (spec->max_rejections > 0 && seq_id >= 0 && seq_id < (llama_seq_id) spec->n_rejections.size()) {
+                spec->n_rejections[seq_id] = 0;
+            }
+        } else {
+            // Full rejection (0 draft tokens accepted)
+            if (spec->max_rejections > 0 && seq_id >= 0 && seq_id < (llama_seq_id) spec->n_rejections.size()) {
+                spec->n_rejections[seq_id]++;
+                if (spec->n_rejections[seq_id] >= spec->max_rejections) {
+                    spec->n_cooldown[seq_id] = spec->cooldown_steps;
+                    spec->n_rejections[seq_id] = 0;
+                    LOG_DBG("%s: seq_id %d circuit breaker tripped after %d consecutive rejections, cooldown=%d steps\n",
+                            __func__, seq_id, spec->max_rejections, spec->cooldown_steps);
+                }
+            }
         }
 
         impl->accept(seq_id, n_accepted, false);

@@ -128,10 +128,16 @@ Achieves **~71.5 – 76.0 tokens/sec** with zero CPU offloading :
 | `--triattention-mode MODE` | `global` | Pruning scope: `global` (across all heads/layers), `per-kv-head`, or `per-layer-head`. |
 | `--triattention-agg MODE` | `mean` | Score aggregation across query heads: `mean` or `max`. |
 | `--triattention-normalize` | `true` | Z-score normalization of scores across heads before selection. |
-| `--triattention-offset-max N` | `0` | Maximum RoPE offset frequency bins to consider (recommended: `4096`). |
 | `--triattention-log` | `false` | Outputs detailed pruning diagnostics and token retention stats to stderr. |
 
-### 3. Engine & Concurrency Environment Variables
+### 3. Speculative Decoding Circuit Breaker Arguments
+
+| Argument | Default | Description |
+| :--- | :--- | :--- |
+| `--spec-draft-max-rejections N` | `0` (disabled) | Max consecutive draft token rejections (0 accepted) before tripping the circuit breaker. Recommended: `2`–`3`. |
+| `--spec-draft-cooldown N` | `3` | Number of subsequent tokens to decode directly with target model without drafting when circuit breaker trips. Recommended: `3`–`5`. |
+
+### 4. Engine & Concurrency Environment Variables
 
 | Variable | Recommended | Description |
 | :--- | :--- | :--- |
