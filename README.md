@@ -59,9 +59,7 @@ export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH
 ./dist/v1.0.1/cuda12.4-lite/run-server.sh -m /path/to/model.gguf ...
 ```
 
-## Optimal Pareto-Front Configuration (Ternary-Bonsai-2-27B + DFlash2)
-
-Multi-objective Bayesian Optimization (qLogNEHVI BoTorch, 25 iterations across 7 parameters on Tesla V100 16GB) identified the following optimal Pareto-frontier configurations balancing **Generation Speed (TPS)**, **Deep Logic / Code Accuracy**, and **Long-Context Retrieval (Semantic NIAH)**:
+## Optimal Configuration (Ternary-Bonsai-2-27B + DFlash2)
 
 ### Best Config
 Achieves **~71.5 – 76.0 tokens/sec** with zero CPU offloading :
