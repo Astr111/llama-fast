@@ -91,7 +91,7 @@ Achieves **~71.5 – 76.0 tokens/sec** with zero CPU offloading :
 ```
 
 ### Benchmark Metrics:
-| Metric | Q8_0 Drafter | Q4_K_M Drafter (New) | Note |
+| Metric | Q8_0 Drafter | Q4_K_M Drafter | Note |
 | :--- | :---: | :---: | :--- |
 | **Generation Speed** | 58.82 – 64.7 tok/s | **71.54 – 75.92 tok/s** | **+17.3% to +21.6% faster** decode speed |
 | **Drafter VRAM Usage** | ~2.0 GB | **~1.1 GB** | **-900 MB VRAM savings** |
