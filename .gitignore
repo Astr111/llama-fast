@@ -74,4 +74,3 @@ build-*/
 build-windows-*.bat
 build-win*/
 calibrate-*.bat
-obs-twitch-chat/
